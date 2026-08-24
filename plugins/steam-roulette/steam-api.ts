@@ -5,7 +5,7 @@
  *
  * Instance requirements (see the repo README):
  *   PLUGIN_PROXY_HOSTS=api.steampowered.com
- *   PLUGIN_PROXY_SECRETS=STEAM=<your steam web api key>
+ *   PLUGIN_PROXY_SECRETS=STEAM@api.steampowered.com=<your steam web api key>
  */
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) || "https://awful.frav.in";
 

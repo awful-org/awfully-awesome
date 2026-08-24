@@ -13,7 +13,7 @@ Pin a ref for reproducible deploys: `awful-org/awesome-awful#<tag-or-sha>`.
 
 | Plugin | Command | What it does |
 | --- | --- | --- |
-| steam-roulette | `/steam` | Everyone links their Steam library, the card intersects them, and one spin picks a game you all own. Instance env: `PLUGIN_PROXY_HOSTS=api.steampowered.com` and `PLUGIN_PROXY_SECRETS=STEAM=<api key>` ([get one](https://steamcommunity.com/dev/apikey)). |
+| steam-roulette | `/steam` | Everyone links their Steam library, the card intersects them, and one spin picks a game you all own. Instance env: `PLUGIN_PROXY_HOSTS=api.steampowered.com` and `PLUGIN_PROXY_SECRETS=STEAM@api.steampowered.com=<api key>` ([get one](https://steamcommunity.com/dev/apikey)). |
 
 ## Writing a plugin
 
