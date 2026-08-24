@@ -94,7 +94,7 @@
     } catch (err) {
       error =
         err instanceof Error && err.message === "unconfigured"
-          ? "This instance has no STEAM_API_KEY configured"
+          ? "This instance is not set up for Steam (needs PLUGIN_PROXY_HOSTS + PLUGIN_PROXY_SECRETS)"
           : err instanceof Error
             ? err.message
             : "Something went wrong";
