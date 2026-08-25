@@ -24,7 +24,7 @@ Steam profiles must have **game details set to public**
 Add this repo to the instance and redeploy:
 
 ```
-PLUGIN_SOURCES=awful-org/awesome-awful
+PLUGIN_SOURCES=awful-org/awfully-awesome
 ```
 
 ## Instance requirements

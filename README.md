@@ -1,13 +1,13 @@
-# awesome-awful
+# awfully-awesome
 
 Plugins for [awful.chat](https://github.com/awful-org/awful.chat). Point your
 instance at this repo and redeploy:
 
 ```
-PLUGIN_SOURCES=awful-org/awesome-awful
+PLUGIN_SOURCES=awful-org/awfully-awesome
 ```
 
-Pin a ref for reproducible deploys: `awful-org/awesome-awful#<tag-or-sha>`.
+Pin a ref for reproducible deploys: `awful-org/awfully-awesome#<tag-or-sha>`.
 
 ## Plugins
 
