@@ -205,7 +205,8 @@
   }
 </script>
 
-<div class="flex max-w-sm flex-col gap-3 font-mono">
+<!-- w-full: the host frame sets the default card size. -->
+<div class="flex w-full flex-col gap-3 font-mono">
   <div class="text-sm font-semibold">Steam roulette</div>
 
   {#if !state.spun}
@@ -288,7 +289,7 @@
         href={`https://store.steampowered.com/app/${state.winnerAppid}`}
         target="_blank"
         rel="noopener noreferrer"
-        class="block overflow-hidden rounded-md border border-border hover:border-primary/60 transition-colors"
+        class="block max-w-sm overflow-hidden rounded-md border border-border hover:border-primary/60 transition-colors"
       >
         <img
           src={`https://cdn.cloudflare.steamstatic.com/steam/apps/${state.winnerAppid}/header.jpg`}
