@@ -83,3 +83,22 @@ export function chunkAppids(games: OwnedGame[], size = 350): number[][] {
   for (let i = 0; i < ids.length; i += size) out.push(ids.slice(i, i + size));
   return out;
 }
+
+/** Steam category ids that mean "playable together". */
+const MP_CATEGORIES = new Set([1, 9, 20, 36, 38]); // multi, co-op, mmo, online pvp, online co-op
+
+/**
+ * Whether one app is multiplayer, via the store appdetails endpoint. One
+ * call per app by API design; the instance needs store.steampowered.com in
+ * PLUGIN_PROXY_HOSTS. Cache results - appdetails rate limits hard.
+ */
+export async function fetchIsMultiplayer(appid: number): Promise<boolean> {
+  const data = await proxyJson<
+    Record<string, { success?: boolean; data?: { categories?: Array<{ id: number }> } }>
+  >(
+    "https://store.steampowered.com/api/appdetails?filters=categories&appids=" + appid
+  );
+  const entry = data[String(appid)];
+  if (!entry?.success) return false;
+  return (entry.data?.categories ?? []).some((c) => MP_CATEGORIES.has(c.id));
+}

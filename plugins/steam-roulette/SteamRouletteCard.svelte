@@ -3,7 +3,7 @@
   import type { Message } from "$lib/transport/transport.svelte";
   import type { HostApi } from "$lib/plugins/api";
   import { commonGames, isComplete, type RouletteState } from "./logic";
-  import { chunkAppids, fetchOwnedGames, resolveSteamId, type OwnedGame } from "./steam-api";
+  import { chunkAppids, fetchIsMultiplayer, fetchOwnedGames, resolveSteamId } from "./steam-api";
 
   interface Props {
     card: Message;
@@ -30,6 +30,51 @@
   });
 
   const common = $derived(commonGames(state));
+
+  /** appid -> is-multiplayer, resolved lazily once a common set exists. */
+  let mpFlags = $state<Record<string, boolean>>({});
+  let mpChecked = $state(0);
+  let mpBusy = $state(false);
+  let multiplayerOnly = $state(true);
+
+  const MP_KEY = "mp-flags";
+  $effect(() => {
+    void host.storage.get(MP_KEY).then((v) => {
+      if (v && typeof v === "object")
+        mpFlags = { ...(v as Record<string, boolean>), ...mpFlags };
+    });
+  });
+
+  // Resolve multiplayer flags for the common set, cached forever per app -
+  // appdetails rate limits hard, so this trickles and persists.
+  $effect(() => {
+    const ids = common;
+    if (ids.length === 0 || state.spun || mpBusy) return;
+    const missing = ids.filter((id) => !(String(id) in mpFlags));
+    if (missing.length === 0) return;
+    mpBusy = true;
+    void (async () => {
+      const next = { ...mpFlags };
+      for (const id of missing) {
+        try {
+          next[String(id)] = await fetchIsMultiplayer(id);
+        } catch {
+          break; // unconfigured host or rate limited: stop, retry later
+        }
+        mpChecked += 1;
+        await new Promise((r) => setTimeout(r, 350));
+      }
+      mpFlags = next;
+      void host.storage.set(MP_KEY, next);
+      mpBusy = false;
+    })();
+  });
+
+  const mpKnown = $derived(common.filter((id) => String(id) in mpFlags));
+  const mpPool = $derived(common.filter((id) => mpFlags[String(id)] === true));
+  const pool = $derived(
+    multiplayerOnly && mpPool.length > 0 ? mpPool : common
+  );
   const linkedMembers = $derived(
     [...state.libraries.values()].map((lib) => ({
       name: lib.name,
@@ -107,7 +152,7 @@
     if (spinningSend || state.spun || common.length === 0) return;
     spinningSend = true;
     try {
-      await host.sendUpdate(card.id, { action: "spin" });
+      await host.sendUpdate(card.id, { action: "spin", pool });
     } catch (err) {
       console.error("[steam-roulette] spin failed:", err);
     } finally {
@@ -136,6 +181,17 @@
     </div>
 
     {#if !iLinked}
+      <a
+        href="https://steamcommunity.com/my"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="text-xs text-primary hover:underline"
+      >
+        Open my Steam profile
+      </a>
+      <p class="-mt-2 text-[10px] text-muted-foreground">
+        Copy the address it lands on and paste it below.
+      </p>
       <div class="flex gap-1.5">
         <input
           bind:value={profileInput}
@@ -157,10 +213,20 @@
     {#if common.length > 0}
       <div class="text-xs">
         <span class="text-primary font-semibold">{common.length}</span>
-        games in common
+        games in common{#if mpKnown.length === common.length},
+          <span class="text-primary font-semibold">{mpPool.length}</span>
+          multiplayer{:else}
+          <span class="text-muted-foreground">
+            (checking multiplayer {mpKnown.length}/{common.length}...)</span
+          >{/if}
       </div>
+      <label class="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+        <input type="checkbox" bind:checked={multiplayerOnly} class="accent-current" />
+        multiplayer only{#if multiplayerOnly && mpPool.length === 0 && mpKnown.length === common.length}
+          <span class="text-destructive">(none found, spinning over all)</span>{/if}
+      </label>
       <Button size="sm" onclick={spin} disabled={spinningSend}>
-        {spinningSend ? "Spinning..." : "Spin the roulette"}
+        {spinningSend ? "Spinning..." : `Spin (${pool.length} in the pot)`}
       </Button>
     {:else if linkedMembers.filter((m) => m.done).length >= 2}
       <div class="text-xs text-destructive">No games in common. Tragic.</div>
@@ -190,7 +256,7 @@
       </a>
       <div class="text-sm font-bold text-primary">{nameFor(state.winnerAppid)}</div>
       <div class="text-xs text-muted-foreground">
-        Spun by {state.spinnerName} - {common.length} games were in the pot
+        Spun by {state.spinnerName} - {state.potSize} games were in the pot
       </div>
     {/if}
   {/if}

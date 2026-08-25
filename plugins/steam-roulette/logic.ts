@@ -18,6 +18,8 @@ export interface RouletteState {
   spun: boolean;
   winnerAppid: number | null;
   spinnerName: string;
+  /** How many games were in the pool the winning spin drew from. */
+  potSize: number;
 }
 
 export const initialState = (_cardData: unknown): RouletteState => ({
@@ -25,6 +27,7 @@ export const initialState = (_cardData: unknown): RouletteState => ({
   spun: false,
   winnerAppid: null,
   spinnerName: "",
+  potSize: 0,
 });
 
 export function isComplete(lib: MemberLibrary): boolean {
@@ -113,8 +116,30 @@ export const reduce = function (
     if (s.spun) return state; // first spin wins
     const common = commonGames(s);
     if (common.length === 0) return state;
-    const winner = common[hashSeed(ctx.updateId + ctx.senderDid) % common.length];
-    return { ...s, spun: true, winnerAppid: winner, spinnerName: ctx.senderName };
+    // The spin CARRIES its pool (e.g. the multiplayer-only subset).
+    // Multiplayer flags come from per-app fetches that finish at different
+    // times on different clients, so the pool cannot be derived locally -
+    // it must ride the signed update to stay deterministic. The reducer
+    // only accepts a subset of the common games, so a pool cannot smuggle
+    // in a game somebody does not own.
+    let pool = common;
+    if (Array.isArray(data.pool) && data.pool.length > 0) {
+      const commonSet = new Set(common);
+      const candidate = data.pool.filter(
+        (id): id is number =>
+          typeof id === "number" && Number.isInteger(id) && commonSet.has(id)
+      );
+      if (candidate.length !== data.pool.length) return state; // not a subset: reject
+      pool = [...new Set(candidate)].sort((a, b) => a - b);
+    }
+    const winner = pool[hashSeed(ctx.updateId + ctx.senderDid) % pool.length];
+    return {
+      ...s,
+      spun: true,
+      winnerAppid: winner,
+      spinnerName: ctx.senderName,
+      potSize: pool.length,
+    };
   }
 
   return state;
