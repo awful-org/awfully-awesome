@@ -90,6 +90,11 @@
   let rolling = $state(false);
   let rollIndex = $state(0);
   let sawUnspun = false;
+  /** Plain let ON PURPOSE: the animation effect reads $state it also writes
+   *  (rolling), so it re-runs when the roll ends - guarding the restart with
+   *  reactive state re-triggered the roll forever, and only a refresh
+   *  (fresh mount, sawUnspun false) ever showed the winner. */
+  let animPlayed = false;
   const reducedMotion =
     typeof matchMedia !== "undefined" &&
     matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -97,19 +102,28 @@
   $effect(() => {
     if (!state.spun || state.winnerAppid === null) {
       sawUnspun = true;
+      animPlayed = false;
       return;
     }
-    if (!sawUnspun || reducedMotion || common.length < 2) return;
+    if (animPlayed || !sawUnspun || reducedMotion || common.length < 2) return;
     const target = common.indexOf(state.winnerAppid);
-    if (target === -1 || rolling) return;
+    if (target === -1) return;
+    animPlayed = true;
     rolling = true;
-    const total = common.length * 2 + target;
-    let step = 0;
+    // Fixed duration, NOT steps-per-game: two laps over a real common set
+    // (hundreds of games) took minutes, which read as "the spin never
+    // stops" and everyone refreshed to see the saved winner.
+    const DURATION = 3000;
+    const start = performance.now();
     const tick = () => {
-      rollIndex = step % common.length;
-      step += 1;
-      if (step <= total) setTimeout(tick, 40 + (step / total) * 160);
-      else rolling = false;
+      const t = (performance.now() - start) / DURATION;
+      if (t >= 1) {
+        rollIndex = target;
+        rolling = false;
+        return;
+      }
+      rollIndex = (rollIndex + 1) % common.length;
+      setTimeout(tick, 40 + t * 180);
     };
     tick();
   });
