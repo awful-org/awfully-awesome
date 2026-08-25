@@ -20,6 +20,10 @@ export interface RouletteState {
   spinnerName: string;
   /** How many games were in the pool the winning spin drew from. */
   potSize: number;
+  /** The exact pool the winning spin drew from - what the roll animation
+   *  shows, so a multiplayer-only spin rolls over multiplayer games, not
+   *  the full common set. */
+  pool: number[];
 }
 
 export const initialState = (_cardData: unknown): RouletteState => ({
@@ -28,6 +32,7 @@ export const initialState = (_cardData: unknown): RouletteState => ({
   winnerAppid: null,
   spinnerName: "",
   potSize: 0,
+  pool: [],
 });
 
 export function isComplete(lib: MemberLibrary): boolean {
@@ -143,6 +148,22 @@ export const reduce = function (
       winnerAppid: winner,
       spinnerName: ctx.senderName,
       potSize: pool.length,
+      pool,
+    };
+  }
+
+  if (data.action === "respin") {
+    // Back to the pool view for another round; the linked libraries stay.
+    // First-spin-wins still holds within a round because fold order is
+    // global: a respin and a concurrent spin land the same way everywhere.
+    if (!s.spun) return state;
+    return {
+      ...s,
+      spun: false,
+      winnerAppid: null,
+      spinnerName: "",
+      potSize: 0,
+      pool: [],
     };
   }
 

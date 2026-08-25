@@ -97,6 +97,9 @@
   const iLinked = $derived(state.libraries.has(host.selfDid()));
 
   // Slot-machine highlight easing onto the (already deterministic) winner.
+  // Rolls over the pool the spin ACTUALLY drew from (state.pool, e.g. the
+  // multiplayer-only subset), not the full common set.
+  const rollPool = $derived(state.pool.length >= 2 ? state.pool : common);
   let rolling = $state(false);
   let rollIndex = $state(0);
   let sawUnspun = false;
@@ -115,8 +118,8 @@
       animPlayed = false;
       return;
     }
-    if (animPlayed || !sawUnspun || reducedMotion || common.length < 2) return;
-    const target = common.indexOf(state.winnerAppid);
+    if (animPlayed || !sawUnspun || reducedMotion || rollPool.length < 2) return;
+    const target = rollPool.indexOf(state.winnerAppid);
     if (target === -1) return;
     animPlayed = true;
     rolling = true;
@@ -132,7 +135,7 @@
         rolling = false;
         return;
       }
-      rollIndex = (rollIndex + 1) % common.length;
+      rollIndex = (rollIndex + 1) % rollPool.length;
       setTimeout(tick, 40 + t * 180);
     };
     tick();
@@ -181,6 +184,19 @@
       console.error("[steam-roulette] spin failed:", err);
     } finally {
       spinningSend = false;
+    }
+  }
+
+  let respinSend = $state(false);
+  async function respin() {
+    if (respinSend || !state.spun) return;
+    respinSend = true;
+    try {
+      await host.sendUpdate(card.id, { action: "respin" });
+    } catch (err) {
+      console.error("[steam-roulette] respin failed:", err);
+    } finally {
+      respinSend = false;
     }
   }
 
@@ -261,8 +277,8 @@
         {state.spinnerName} is spinning...
       </div>
       <div class="flex flex-col gap-0.5 text-xs">
-        {#each common.slice(Math.max(0, rollIndex - 2), rollIndex + 3) as appid (appid)}
-          <div class={appid === common[rollIndex] ? "text-primary font-bold" : "text-muted-foreground"}>
+        {#each rollPool.slice(Math.max(0, rollIndex - 2), rollIndex + 3) as appid (appid)}
+          <div class={appid === rollPool[rollIndex] ? "text-primary font-bold" : "text-muted-foreground"}>
             {nameFor(appid)}
           </div>
         {/each}
@@ -281,10 +297,26 @@
           loading="lazy"
         />
       </a>
-      <div class="text-sm font-bold text-primary">{nameFor(state.winnerAppid)}</div>
+      <a
+        href={`https://store.steampowered.com/app/${state.winnerAppid}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        class="text-sm font-bold text-primary hover:underline"
+      >
+        {nameFor(state.winnerAppid)}
+      </a>
       <div class="text-xs text-muted-foreground">
         Spun by {state.spinnerName} - {state.potSize} games were in the pot
       </div>
+      <Button
+        size="sm"
+        variant="outline"
+        class="text-xs"
+        onclick={respin}
+        disabled={respinSend}
+      >
+        {respinSend ? "Resetting..." : "Spin again"}
+      </Button>
     {/if}
   {/if}
 </div>
