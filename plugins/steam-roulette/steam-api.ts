@@ -24,6 +24,12 @@ const vanityRe = /^[A-Za-z0-9_-]{2,64}$/;
 /** A pasted profile can be an id64, a vanity name, or a full profile url. */
 export function parseProfileInput(q: string): { steamId?: string; vanity?: string } {
   q = q.trim();
+  // People paste urls without the scheme ("steamcommunity.com/id/gaben");
+  // new URL() refuses those, and the bare-string fallbacks cannot match a
+  // path either - so the most natural paste of all failed.
+  if (!/^https?:\/\//i.test(q) && q.includes("/")) {
+    q = "https://" + q;
+  }
   try {
     const u = new URL(q);
     const parts = u.pathname.split("/").filter(Boolean);
