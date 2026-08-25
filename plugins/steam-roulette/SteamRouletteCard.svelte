@@ -58,24 +58,29 @@
   // old 350ms (~170/min) guaranteed 429s from our own relay after ten apps.
   $effect(() => {
     const ids = common;
-    if (mpStopped || ids.length === 0 || state.spun || mpBusy) return;
+    if (mpStopped || !multiplayerOnly || ids.length === 0 || state.spun || mpBusy)
+      return;
     const missing = ids.filter((id) => !(String(id) in mpFlags));
     if (missing.length === 0) return;
     mpBusy = true;
     void (async () => {
-      const next = { ...mpFlags };
       for (const id of missing) {
+        let flag: boolean;
         try {
-          next[String(id)] = await fetchIsMultiplayer(id);
+          flag = await fetchIsMultiplayer(id);
         } catch {
           mpStopped = true; // unconfigured host or rate limited: park it
           break;
         }
+        // Persist EVERY flag as it lands. The whole backlog takes minutes
+        // at this pace, and saving only at the end meant any reload or
+        // room switch threw the progress away - every visit refetched the
+        // same games from scratch, forever.
+        mpFlags = { ...mpFlags, [String(id)]: flag };
+        void host.storage.set(MP_KEY, mpFlags);
         mpChecked += 1;
         await new Promise((r) => setTimeout(r, 7000));
       }
-      mpFlags = next;
-      void host.storage.set(MP_KEY, next);
       mpBusy = false;
     })();
   });
