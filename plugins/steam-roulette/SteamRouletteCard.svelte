@@ -45,11 +45,20 @@
     });
   });
 
-  // Resolve multiplayer flags for the common set, cached forever per app -
-  // appdetails rate limits hard, so this trickles and persists.
+  /** Plain let ON PURPOSE: the trickle effect reads mpBusy, which it also
+   *  writes - so a failed fetch that reset mpBusy re-ran the effect
+   *  IMMEDIATELY, retried the same appid, got 429 again, and hammered the
+   *  proxy in a tight loop forever. One failure now parks the trickle for
+   *  the rest of this mount; the next page load resumes where the
+   *  persisted cache left off. */
+  let mpStopped = false;
+
+  // Resolve multiplayer flags for the common set, cached forever per app.
+  // Paced UNDER the relay's /plugin-proxy limit of 10 req/min per IP - the
+  // old 350ms (~170/min) guaranteed 429s from our own relay after ten apps.
   $effect(() => {
     const ids = common;
-    if (ids.length === 0 || state.spun || mpBusy) return;
+    if (mpStopped || ids.length === 0 || state.spun || mpBusy) return;
     const missing = ids.filter((id) => !(String(id) in mpFlags));
     if (missing.length === 0) return;
     mpBusy = true;
@@ -59,10 +68,11 @@
         try {
           next[String(id)] = await fetchIsMultiplayer(id);
         } catch {
-          break; // unconfigured host or rate limited: stop, retry later
+          mpStopped = true; // unconfigured host or rate limited: park it
+          break;
         }
         mpChecked += 1;
-        await new Promise((r) => setTimeout(r, 350));
+        await new Promise((r) => setTimeout(r, 7000));
       }
       mpFlags = next;
       void host.storage.set(MP_KEY, next);
