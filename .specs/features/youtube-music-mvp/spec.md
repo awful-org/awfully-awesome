@@ -128,16 +128,16 @@ Room participants need a lightweight way to choose and listen to YouTube videos 
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| YM-01 | P1: Create and play a shared session | Design | Pending |
-| YM-02 | P1: Create and play a shared session | Design | Pending |
-| YM-03 | P1: Create and play a shared session | Design | Pending |
-| YM-04 | P1: Collaborate on the queue | Design | Pending |
-| YM-05 | P1: Collaborate on the queue | Design | Pending |
-| YM-06 | P1: Make DJ actions visible | Design | Pending |
-| YM-07 | P1: Make DJ actions visible | Design | Pending |
-| YM-08 | P1: Share playback intent | Design | Pending |
-| YM-09 | P1: Share playback intent | Design | Pending |
-| YM-10 | P2: Keep the card compact | Design | Pending |
+| YM-01 | P1: Create and play a shared session | Tasks | Implementing |
+| YM-02 | P1: Create and play a shared session | Tasks | Pending |
+| YM-03 | P1: Create and play a shared session | Tasks | Pending |
+| YM-04 | P1: Collaborate on the queue | Tasks | Implementing |
+| YM-05 | P1: Collaborate on the queue | Tasks | Implementing |
+| YM-06 | P1: Make DJ actions visible | Tasks | Implementing |
+| YM-07 | P1: Make DJ actions visible | Tasks | Implementing |
+| YM-08 | P1: Share playback intent | Tasks | Implementing |
+| YM-09 | P1: Share playback intent | Tasks | Implementing |
+| YM-10 | P2: Keep the card compact | Tasks | Pending |
 
 **Coverage:** 10 total, 0 mapped to tasks, 10 unmapped pending design.
 

@@ -56,6 +56,8 @@ T6
 
 ### T1: Add deterministic music state
 
+**Status**: Done
+
 **What**: Create the URL parser and pure queue, playback, and activity-log reducer with specification-derived unit tests.
 **Where**: `plugins/youtube-music/logic.ts`
 **Depends on**: None
@@ -64,10 +66,10 @@ T6
 
 **Done when**:
 
-- [ ] Supported URL forms create a video ID and unsupported inputs return no ID.
-- [ ] Valid action updates produce the exact queue, playback state, and verified-sender activity entry in the specification.
-- [ ] Invalid values and removal of the final entry leave valid, replayable state.
-- [ ] The targeted test gate passes with at least 12 new assertions.
+- [x] Supported URL forms create a video ID and unsupported inputs return no ID.
+- [x] Valid action updates produce the exact queue, playback state, and verified-sender activity entry in the specification.
+- [x] Invalid values and removal of the final entry leave valid, replayable state.
+- [x] The targeted test gate passes with at least 12 new assertions.
 
 **Tests**: unit
 **Gate**: quick
