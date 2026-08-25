@@ -26,10 +26,22 @@ describe("spin pool (multiplayer filter)", () => {
     expect(spun.potSize).toBe(2);
   });
 
-  it("rejects a pool that is not a subset of the common games", () => {
+  it("intersects a pool with the common games - unowned ids drop, spin lands", () => {
+    // A concurrent library link can change `common` between the spinner's
+    // snapshot and the fold; rejecting used to strand every client unspun.
     const s = twoLibraries();
     const spun = reduce(s, { data: { action: "spin", pool: [20, 99] } }, ctx("did:a", "A", "sp")) as RouletteState;
-    expect(spun.spun).toBe(false);
+    expect(spun.spun).toBe(true);
+    expect(spun.winnerAppid).toBe(20);
+    expect(spun.potSize).toBe(1);
+  });
+
+  it("a pool with nothing in common falls back to the full common set", () => {
+    const s = twoLibraries();
+    const spun = reduce(s, { data: { action: "spin", pool: [98, 99] } }, ctx("did:a", "A", "sp")) as RouletteState;
+    expect(spun.spun).toBe(true);
+    expect([20, 30, 40]).toContain(spun.winnerAppid);
+    expect(spun.potSize).toBe(3);
   });
 
   it("no pool means the full common set, deterministic as before", () => {

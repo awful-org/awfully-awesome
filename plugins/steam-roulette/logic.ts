@@ -119,9 +119,13 @@ export const reduce = function (
     // The spin CARRIES its pool (e.g. the multiplayer-only subset).
     // Multiplayer flags come from per-app fetches that finish at different
     // times on different clients, so the pool cannot be derived locally -
-    // it must ride the signed update to stay deterministic. The reducer
-    // only accepts a subset of the common games, so a pool cannot smuggle
-    // in a game somebody does not own.
+    // it must ride the signed update to stay deterministic. It is
+    // INTERSECTED with the common games, not required to equal them: a
+    // library update can sort between the spinner's snapshot and the spin
+    // (concurrent link, lamport race), and rejecting the whole spin for
+    // that left every client stuck unspun. The intersection keeps the spin
+    // landing while still refusing to smuggle in a game somebody does not
+    // own; an empty intersection falls back to the full common set.
     let pool = common;
     if (Array.isArray(data.pool) && data.pool.length > 0) {
       const commonSet = new Set(common);
@@ -129,8 +133,8 @@ export const reduce = function (
         (id): id is number =>
           typeof id === "number" && Number.isInteger(id) && commonSet.has(id)
       );
-      if (candidate.length !== data.pool.length) return state; // not a subset: reject
-      pool = [...new Set(candidate)].sort((a, b) => a - b);
+      const cleaned = [...new Set(candidate)].sort((a, b) => a - b);
+      if (cleaned.length > 0) pool = cleaned;
     }
     const winner = pool[hashSeed(ctx.updateId + ctx.senderDid) % pool.length];
     return {

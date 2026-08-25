@@ -233,6 +233,9 @@
     {/if}
   {:else if state.winnerAppid !== null}
     {#if rolling}
+      <div class="text-xs text-muted-foreground">
+        {state.spinnerName} is spinning...
+      </div>
       <div class="flex flex-col gap-0.5 text-xs">
         {#each common.slice(Math.max(0, rollIndex - 2), rollIndex + 3) as appid (appid)}
           <div class={appid === common[rollIndex] ? "text-primary font-bold" : "text-muted-foreground"}>
