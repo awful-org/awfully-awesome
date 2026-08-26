@@ -227,9 +227,9 @@
     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
     <div
       onclick={(e) => e.stopPropagation()}
-      class="pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex flex-col gap-1 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2 pt-8 transition-opacity focus-within:opacity-100 {chromeVisible
-        ? 'opacity-100'
-        : 'opacity-0'}"
+      class="absolute inset-x-0 bottom-0 z-20 flex flex-col gap-1 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2 pt-8 transition-opacity focus-within:opacity-100 {chromeVisible
+        ? 'pointer-events-auto opacity-100'
+        : 'pointer-events-none opacity-0'}"
     >
       <input
         type="range"
