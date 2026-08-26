@@ -14,6 +14,7 @@
   import WafflePlayer from "./WafflePlayer.svelte";
   import type { MusicState } from "./logic";
   import { tilePresence, registerPositionSource } from "./tile-presence.svelte";
+  import { cachedTitle, fetchTitle } from "./titles";
 
   interface Props {
     card: Message;
@@ -53,6 +54,36 @@
       unregister();
       untrack(() => (tilePresence.count -= 1));
     };
+  });
+
+  // Lock screen / media keys: the RENDERER owns the OS media surface, and
+  // the handlers fire SYNCED actions - a headset pause pauses the party
+  // for everyone, exactly like the in-tile controls.
+  let npTitle = $state("");
+  $effect(() => {
+    const id = current;
+    if (!id) return;
+    npTitle = cachedTitle(id) ?? id;
+    void fetchTitle(id).then((t) => {
+      if (current === id) npTitle = t;
+    });
+  });
+  $effect(() => {
+    if (!joined || !current) {
+      host.setNowPlaying(null);
+      return;
+    }
+    host.setNowPlaying({
+      title: npTitle,
+      artist: "Waffle Party",
+      artworkUrl: `https://i.ytimg.com/vi/${current}/hqdefault.jpg`,
+      playing: music.playing,
+      onPlay: () => void togglePlayback(),
+      onPause: () => void togglePlayback(),
+      onNext: () => void skip(),
+      onPrevious: () => void previous(),
+    });
+    return () => host.setNowPlaying(null);
   });
 
   // Owner duty the card normally performs, mirrored here because the card

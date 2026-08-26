@@ -1,8 +1,3 @@
-<script module lang="ts">
-  // Titles survive widget remounts (room switches re-render the sidebar).
-  const titleCache = new Map<string, string>();
-</script>
-
 <script lang="ts">
   import { tick } from "svelte";
   import { Play, Pause, SkipBack, SkipForward } from "@lucide/svelte";
@@ -10,6 +5,7 @@
   import type { Message } from "$lib/transport/transport.svelte";
   import type { MusicState } from "./logic";
   import { livePosition } from "./tile-presence.svelte";
+  import { cachedTitle, fetchTitle } from "./titles";
 
   interface Props {
     card: Message;
@@ -29,27 +25,10 @@
       title = "";
       return;
     }
-    const cached = titleCache.get(id);
-    if (cached) {
-      title = cached;
-      return;
-    }
-    title = "…";
-    void (async () => {
-      try {
-        const res = await fetch(
-          `https://www.youtube.com/oembed?url=${encodeURIComponent(
-            `https://www.youtube.com/watch?v=${id}`
-          )}&format=json`
-        );
-        const data = (await res.json()) as { title?: unknown };
-        const t = typeof data.title === "string" ? data.title : id;
-        titleCache.set(id, t);
-        if (current === id) title = t;
-      } catch {
-        if (current === id) title = id;
-      }
-    })();
+    title = cachedTitle(id) ?? "…";
+    void fetchTitle(id).then((t) => {
+      if (current === id) title = t;
+    });
   });
 
   async function send(data: unknown) {

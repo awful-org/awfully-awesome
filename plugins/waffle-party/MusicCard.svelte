@@ -53,6 +53,25 @@
     return registerPositionSource(() => player?.currentTime() ?? localPosition);
   });
 
+  // ...and the lock-screen owner, with SYNCED handlers - same rule as the
+  // call tile, whichever surface renders holds the OS media surface.
+  $effect(() => {
+    if (tilePresence.count > 0 || !joined || !current || music.closed) {
+      host.setNowPlaying(null);
+      return;
+    }
+    host.setNowPlaying({
+      title: titles[current] ?? current,
+      artist: "Waffle Party",
+      artworkUrl: `https://i.ytimg.com/vi/${current}/hqdefault.jpg`,
+      playing: music.playing,
+      onPlay: () => void togglePlayback(),
+      onPause: () => void togglePlayback(),
+      onNext: () => void send({ action: "skip" }, "Skipping…"),
+    });
+    return () => host.setNowPlaying(null);
+  });
+
   function departureAction(): { action: "close" | "leave" } | null {
     // The call tile is rendering the party: this card unmounting (scrolled
     // away, view switched) is NOT the user leaving. Closing here is what
