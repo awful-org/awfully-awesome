@@ -22,3 +22,7 @@ The folder layout, API contract, and rules live in the app repo:
 [frontend/plugins/README.md](https://github.com/awful-org/awful.chat/blob/main/frontend/plugins/README.md).
 A plugin here is a folder under `plugins/` with a `manifest.ts` and an
 `index.ts`; tests (`*.test.ts`) run inside the app's vitest once fetched.
+
+## License
+
+[MIT](LICENSE).
