@@ -4,6 +4,7 @@
   import type { Message } from "$lib/transport/transport.svelte";
   import WafflePlayer from "./WafflePlayer.svelte";
   import { playlistIdFromUrl, videoIdFromUrl, type MusicState } from "./logic";
+  import { tilePresence, registerPositionSource } from "./tile-presence.svelte";
 
   interface Props {
     card: Message;
@@ -45,7 +46,18 @@
       if (label && pending === label) pending = null;
     }
   }
+  // While THIS card renders the player, it is the live position source for
+  // playerless surfaces (the sidebar widget).
+  $effect(() => {
+    if (tilePresence.count > 0 || !joined) return;
+    return registerPositionSource(() => player?.currentTime() ?? localPosition);
+  });
+
   function departureAction(): { action: "close" | "leave" } | null {
+    // The call tile is rendering the party: this card unmounting (scrolled
+    // away, view switched) is NOT the user leaving. Closing here is what
+    // froze the party the moment the owner joined a call.
+    if (tilePresence.count > 0) return null;
     if (departureSent || music.closed || !joined) return null;
     departureSent = true;
     return { action: selfDid === music.ownerDid ? "close" : "leave" };
@@ -78,6 +90,9 @@
   $effect(() => {
     const latest = music.activity.at(-1);
     if (
+      // The tile is the renderer: it owns the join-sync too, and this
+      // card's player is not even mounted to read a position from.
+      tilePresence.count > 0 ||
       selfDid !== music.ownerDid ||
       latest?.action !== "joined" ||
       music.activity.length === syncedJoinCount ||
@@ -202,6 +217,16 @@
   {#if music.closed}<p class="py-8 text-center text-sm text-muted-foreground">
       The party is over.. heh..~
     </p>{:else if joined && (current || pendingPlaylist)}<div class="space-y-1">
+      {#if tilePresence.count > 0}
+        <!-- ONE renderer at a time: while the call tile plays the party,
+             this card is just a pointer to it. No second player, no muted
+             shadow instance, no split lifecycle. -->
+        <p
+          class="rounded bg-primary/10 px-2 py-2 text-center font-mono text-xs text-primary"
+        >
+          ▶ Rendering in the call
+        </p>
+      {:else}
       <WafflePlayer
         bind:this={player}
         videoId={current}
@@ -219,6 +244,7 @@
       />{#if playerLoading}<p class="text-center text-xs text-muted-foreground">
           Loading player…
         </p>{/if}
+      {/if}
     </div>{:else if !joined}<p
       class="py-5 text-center text-sm text-muted-foreground"
     >
@@ -243,6 +269,9 @@
       Reading playlist…
     </p>{/if}
   {#if !music.closed && joined}<div class="space-y-2">
+      <!-- Playback control lives on whichever surface RENDERS: while the
+           call tile plays, the card keeps only queue management. -->
+      {#if tilePresence.count === 0}
       <input
         class="w-full"
         type="range"
@@ -254,7 +283,9 @@
         onchange={() => send({ action: "seek", position: localPosition })}
         aria-label="Seek video"
       />
+      {/if}
       <div class="flex flex-wrap gap-2 text-xs">
+        {#if tilePresence.count === 0}
         <button
           class="rounded bg-primary px-3 py-2 text-primary-foreground disabled:opacity-60"
           disabled={pending !== null}
@@ -281,6 +312,7 @@
           disabled={pending !== null}
           onclick={() => send({ action: "skip" }, "Skipping…")}>Skip</button
         >
+        {/if}
         <button
           class="rounded border border-border px-3 py-2"
           onclick={() => (queueOpen = !queueOpen)}
@@ -304,6 +336,7 @@
             >Loop video</option
           ><option value="queue">Loop queue</option></select
         >
+        {#if tilePresence.count === 0}
         <label class="flex items-center gap-1"
           >Vol <input
             type="range"
@@ -312,6 +345,7 @@
             bind:value={volume}
           /></label
         >
+        {/if}
       </div>
     </div>
     {#if queueOpen}

@@ -1,11 +1,37 @@
 import { definePlugin, type HostApi } from "$lib/plugins/api";
 import { manifest } from "./manifest";
 import MusicCard from "./MusicCard.svelte";
-import { initialState, playlistIdFromUrl, reduce, videoIdFromUrl } from "./logic";
+import WaffleCallTile from "./WaffleCallTile.svelte";
+import WaffleWidget from "./WaffleWidget.svelte";
+import {
+  initialState,
+  playlistIdFromUrl,
+  reduce,
+  videoIdFromUrl,
+  type MusicState,
+} from "./logic";
 
 export default definePlugin({
   manifest,
   card: MusicCard,
+  widget: WaffleWidget,
+  // In a call the party is a stream tile, not a chat card: the plugin shows
+  // up in the grid like a screen share, everyone renders YouTube locally,
+  // and only queue/playback state syncs. PURE predicate: every client
+  // shows/hides the tile on the same folded state.
+  callTile: WaffleCallTile,
+  // One party at a time is the whole model - the picker offers only the
+  // newest card and pinning it replaces any older waffle pin.
+  singletonWidget: true,
+  callTileActive: (cardState: unknown) => {
+    const s = cardState as MusicState | undefined;
+    return !!s && !s.closed && s.queue.length > 0;
+  },
+  // The host renders these in the transmissions-style audience chip.
+  callTileViewers: (cardState: unknown) => {
+    const s = cardState as MusicState | undefined;
+    return s ? [...s.members.values()] : [];
+  },
   initialState,
   reduce,
   commands: {

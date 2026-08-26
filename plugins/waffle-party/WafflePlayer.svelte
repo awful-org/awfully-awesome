@@ -12,6 +12,8 @@
     playing: boolean;
     position: number;
     volume?: number;
+    /** false = strip YouTube's own controls; only synced controls remain. */
+    controls?: boolean;
     onPosition?: (position: number) => void;
     onDuration?: (duration: number) => void;
     onEnded?: () => void;
@@ -27,6 +29,7 @@
     playing,
     position,
     volume = 100,
+    controls = true,
     onPosition,
     onDuration,
     onEnded,
@@ -100,7 +103,12 @@
   }
 
   export function currentTime(): number {
-    const current = player?.getCurrentTime();
+    // The YT.Player object grows its API only after the iframe handshake;
+    // the 1s reporter starts before that and crashed on the missing method.
+    const current =
+      typeof player?.getCurrentTime === "function"
+        ? player.getCurrentTime()
+        : undefined;
     return typeof current === "number" && Number.isFinite(current)
       ? current
       : position;
@@ -123,7 +131,9 @@
   onMount(() => {
     const reporter = window.setInterval(() => {
       onPosition?.(currentTime());
-      onDuration?.(player?.getDuration() ?? 0);
+      onDuration?.(
+        typeof player?.getDuration === "function" ? player.getDuration() : 0
+      );
     }, 1_000);
     void loadApi()
       .then((YT) => {
@@ -134,8 +144,11 @@
           ...(videoId ? { videoId } : {}),
           playerVars: {
             playsinline: 1,
-            controls: 1,
-            fs: 1,
+            controls: controls ? 1 : 0,
+            // No fullscreen when our controls own the surface - the native
+            // fullscreen UI would expose the unsynced YouTube controls.
+            fs: controls ? 1 : 0,
+            disablekb: controls ? 0 : 1,
             origin: window.location.origin,
           },
           events: {

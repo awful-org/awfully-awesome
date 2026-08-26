@@ -7,7 +7,8 @@ export const manifest: PluginManifest = {
   icon: "lucide:music",
   author: "Gustavo Walk",
   license: "MIT",
-  version: "1.0.0",
+  version: "1.1.0",
+  repository: "https://github.com/awful-org/awfully-awesome",
   apiVersion: 1,
   commands: [
     { name: "play", usage: "/play YouTube video or playlist URL" },
