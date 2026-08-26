@@ -13,15 +13,22 @@
   import type { Message } from "$lib/transport/transport.svelte";
   import WafflePlayer from "./WafflePlayer.svelte";
   import type { MusicState } from "./logic";
-  import { tilePresence, registerPositionSource } from "./tile-presence.svelte";
+  import {
+    tilePresence,
+    registerPositionSource,
+    parkHandoff,
+  } from "./tile-presence.svelte";
   import { cachedTitle, fetchTitle } from "./titles";
 
   interface Props {
     card: Message;
     cardState: unknown;
     host: HostApi;
+    /** The host mirrors the call chrome: controls show while the mouse
+     *  moves over the call section and hide with the call's own controls. */
+    chromeVisible?: boolean;
   }
-  let { card, cardState, host }: Props = $props();
+  let { card, cardState, host, chromeVisible = true }: Props = $props();
   const music = $derived(cardState as MusicState);
 
   const selfDid = host.selfDid();
@@ -51,6 +58,12 @@
       player ? player.currentTime() : localPosition
     );
     return () => {
+      // Leaving the call: hand the live position to whichever surface
+      // renders next, or the party restarts from the stale synced state.
+      parkHandoff(
+        player ? player.currentTime() : localPosition,
+        untrack(() => music.playing)
+      );
       unregister();
       untrack(() => (tilePresence.count -= 1));
     };
@@ -214,7 +227,9 @@
     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
     <div
       onclick={(e) => e.stopPropagation()}
-      class="pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex flex-col gap-1 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2 pt-8 opacity-0 transition-opacity hover:opacity-100 focus-within:opacity-100"
+      class="pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex flex-col gap-1 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2 pt-8 transition-opacity focus-within:opacity-100 {chromeVisible
+        ? 'opacity-100'
+        : 'opacity-0'}"
     >
       <input
         type="range"

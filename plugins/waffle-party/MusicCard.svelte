@@ -4,7 +4,11 @@
   import type { Message } from "$lib/transport/transport.svelte";
   import WafflePlayer from "./WafflePlayer.svelte";
   import { playlistIdFromUrl, videoIdFromUrl, type MusicState } from "./logic";
-  import { tilePresence, registerPositionSource } from "./tile-presence.svelte";
+  import {
+    tilePresence,
+    registerPositionSource,
+    takeHandoff,
+  } from "./tile-presence.svelte";
 
   interface Props {
     card: Message;
@@ -51,6 +55,19 @@
   $effect(() => {
     if (tilePresence.count > 0 || !joined) return;
     return registerPositionSource(() => player?.currentTime() ?? localPosition);
+  });
+
+  // Becoming the renderer after the call tile (leaving a call): the synced
+  // state.position is stale by however long the tile played, so the tile
+  // parked its live position - re-sync the party to it. Everyone else's
+  // player is already ~there, so the seek is imperceptible to them and
+  // saves US from restarting at the stale point.
+  $effect(() => {
+    if (tilePresence.count > 0 || !joined || !current || music.closed) return;
+    const h = takeHandoff();
+    if (h && Math.abs(h.position - music.position) > 2) {
+      void send({ action: "seek", position: Math.floor(h.position) });
+    }
   });
 
   // ...and the lock-screen owner, with SYNCED handlers - same rule as the
