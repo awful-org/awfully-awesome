@@ -9,6 +9,7 @@
     registerPositionSource,
     takeHandoff,
   } from "./tile-presence.svelte";
+  import { cachedTitle, fetchTitle } from "./titles";
 
   interface Props {
     card: Message;
@@ -161,21 +162,23 @@
     await send({ action: "add", videoId }, "Adding track…");
   }
   const link = (id: string) => `https://www.youtube.com/watch?v=${id}`;
+  // Through the SHARED session cache (titles.ts), not a per-card fetch:
+  // every rendered card refetching every queue entry meant a refresh with a
+  // few parties in history fired the whole backlog of oEmbed calls at once.
   async function resolveTitle(videoId: string) {
     if (titles[videoId]) return;
-    titles[videoId] = "Loading title…";
-    try {
-      const response = await fetch(
-        `https://www.youtube.com/oembed?url=${encodeURIComponent(link(videoId))}&format=json`
-      );
-      const data = (await response.json()) as { title?: unknown };
-      titles[videoId] =
-        typeof data.title === "string" ? data.title : "YouTube video";
-    } catch {
-      titles[videoId] = "YouTube video";
-    }
+    titles[videoId] = cachedTitle(videoId) ?? "Loading title…";
+    titles[videoId] = await fetchTitle(videoId);
   }
   $effect(() => {
+    // A closed party is a tombstone in history: never fetch for it, only
+    // show what the session cache already knows.
+    if (music.closed) {
+      for (const videoId of music.queue) {
+        if (!titles[videoId]) titles[videoId] = cachedTitle(videoId) ?? videoId;
+      }
+      return;
+    }
     for (const videoId of music.queue) void resolveTitle(videoId);
   });
   $effect(() => {
