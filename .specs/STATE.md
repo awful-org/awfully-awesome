@@ -1,6 +1,0 @@
-# STATE
-
-## Decisions
-
-## Handoff
-
