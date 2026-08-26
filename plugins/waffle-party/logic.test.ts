@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   initialState,
+  syncResponder,
   playlistIdFromUrl,
   reduce,
   videoIdFromUrl,
@@ -252,5 +253,33 @@ describe("music reducer", () => {
       loop: "queue" as const,
     };
     expect(update(queue, { action: "ended", index: 1 }).currentIndex).toBe(0);
+  });
+});
+
+describe("syncResponder", () => {
+  it("never picks the newest member and prefers the owner", () => {
+    let s = initialState({ videoId: first, ownerDid: "did:Owner" });
+    s = update(s, { action: "join" }, "Owner") as MusicState;
+    expect(syncResponder(s)).toBeNull(); // alone: nobody to sync you
+
+    s = update(s, { action: "join" }, "Bob") as MusicState;
+    // Bob just joined: the owner answers, never Bob himself.
+    expect(syncResponder(s)).toBe("did:Owner");
+
+    s = update(s, { action: "join" }, "Carol") as MusicState;
+    expect(syncResponder(s)).toBe("did:Owner");
+  });
+
+  it("falls back to the longest-standing member when the owner is gone", () => {
+    let s = initialState({ videoId: first, ownerDid: "did:Owner" });
+    s = update(s, { action: "join" }, "Owner") as MusicState;
+    s = update(s, { action: "join" }, "Bob") as MusicState;
+    s = update(s, { action: "join" }, "Carol") as MusicState;
+    // Owner leaves: reducer forbids owner "leave", so simulate the members
+    // map the fold would hold without them.
+    const members = new Map(s.members);
+    members.delete("did:Owner");
+    const withoutOwner = { ...s, members } as MusicState;
+    expect(syncResponder(withoutOwner)).toBe("did:Bob");
   });
 });

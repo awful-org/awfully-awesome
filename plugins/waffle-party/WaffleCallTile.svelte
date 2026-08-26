@@ -12,7 +12,7 @@
   import type { HostApi } from "$lib/plugins/api";
   import type { Message } from "$lib/transport/transport.svelte";
   import WafflePlayer from "./WafflePlayer.svelte";
-  import type { MusicState } from "./logic";
+  import { syncResponder, type MusicState } from "./logic";
   import {
     tilePresence,
     registerPositionSource,
@@ -38,6 +38,16 @@
   );
 
   let player: WafflePlayer | null = null;
+
+  // This tile content only mounts after the user CLICKED the grid tile to
+  // join it (click-to-join like screen shares) - that click is the intent,
+  // so join the party too instead of showing a second Join button.
+  let autoJoined = false;
+  $effect(() => {
+    if (autoJoined || joined || !current || music.closed) return;
+    autoJoined = true;
+    void send({ action: "join" });
+  });
   let volume = $state(100);
   let localPosition = $state(0);
   let duration = $state(0);
@@ -106,7 +116,7 @@
   $effect(() => {
     const latest = music.activity.at(-1);
     if (
-      selfDid !== music.ownerDid ||
+      selfDid !== syncResponder(music) ||
       latest?.action !== "joined" ||
       music.activity.length === syncedJoinCount ||
       music.currentIndex === null

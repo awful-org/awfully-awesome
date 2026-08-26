@@ -3,7 +3,12 @@
   import type { HostApi } from "$lib/plugins/api";
   import type { Message } from "$lib/transport/transport.svelte";
   import WafflePlayer from "./WafflePlayer.svelte";
-  import { playlistIdFromUrl, videoIdFromUrl, type MusicState } from "./logic";
+  import {
+    playlistIdFromUrl,
+    syncResponder,
+    videoIdFromUrl,
+    type MusicState,
+  } from "./logic";
   import {
     tilePresence,
     registerPositionSource,
@@ -130,7 +135,7 @@
       // The tile is the renderer: it owns the join-sync too, and this
       // card's player is not even mounted to read a position from.
       tilePresence.count > 0 ||
-      selfDid !== music.ownerDid ||
+      selfDid !== syncResponder(music) ||
       latest?.action !== "joined" ||
       music.activity.length === syncedJoinCount ||
       music.currentIndex === null

@@ -81,6 +81,20 @@ export function playlistIdFromUrl(input: string): string | null {
   }
 }
 
+/**
+ * Who answers a fresh join with the authoritative position: the owner if
+ * still a member, else the longest-standing member - never the newest
+ * member (the joiner themselves). Map insertion order IS fold order, so
+ * every client computes the same responder; owner-only responding left
+ * joiners stuck at the stale synced position whenever the owner was gone.
+ */
+export function syncResponder(music: MusicState): string | null {
+  const dids = [...music.members.keys()];
+  if (dids.length < 2) return null;
+  const others = dids.slice(0, -1);
+  return others.includes(music.ownerDid) ? music.ownerDid : (others[0] ?? null);
+}
+
 export function initialState(cardData: unknown): MusicState {
   const data = cardData as {
     videoId?: unknown;
