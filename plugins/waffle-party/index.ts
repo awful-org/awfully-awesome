@@ -23,6 +23,11 @@ export default definePlugin({
   // One party at a time is the whole model - the picker offers only the
   // newest card and pinning it replaces any older waffle pin.
   singletonWidget: true,
+  // The pinned strip follows the newest party YOU are in, across rooms.
+  widgetMine: (cardState: unknown, selfDid: string) => {
+    const s = cardState as MusicState | undefined;
+    return !!s && !s.closed && s.members.has(selfDid);
+  },
   callTileActive: (cardState: unknown) => {
     const s = cardState as MusicState | undefined;
     return !!s && !s.closed && s.queue.length > 0;

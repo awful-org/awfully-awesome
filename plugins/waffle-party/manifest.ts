@@ -7,7 +7,7 @@ export const manifest: PluginManifest = {
   icon: "lucide:music",
   author: "Gustavo Walk",
   license: "MIT",
-  version: "1.2.1",
+  version: "1.2.2",
   repository: "https://github.com/awful-org/awfully-awesome",
   apiVersion: 1,
   commands: [
