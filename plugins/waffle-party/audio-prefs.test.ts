@@ -1,10 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  AUDIO_PREFS_KEY,
-  DEFAULT_VOLUME,
-  readAudioPrefs,
-  writeAudioPrefs,
-} from "./audio-prefs";
+import { AUDIO_PREFS_KEY, readAudioPrefs, writeAudioPrefs } from "./audio-prefs";
 
 describe("audio preferences", () => {
   it("restores every valid integer volume", async () => {
@@ -17,11 +12,11 @@ describe("audio preferences", () => {
     for (const value of [undefined, null, "37", 12.5, -1, 101]) {
       await expect(
         readAudioPrefs({ get: vi.fn().mockResolvedValue(value), set: vi.fn() })
-      ).resolves.toBe(DEFAULT_VOLUME);
+      ).resolves.toBe(100);
     }
     await expect(
       readAudioPrefs({ get: vi.fn().mockRejectedValue(new Error("blocked")), set: vi.fn() })
-    ).resolves.toBe(DEFAULT_VOLUME);
+    ).resolves.toBe(100);
   });
 
   it("persists only valid integer volumes under audio_prefs", async () => {
