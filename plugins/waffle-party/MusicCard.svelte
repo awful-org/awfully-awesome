@@ -315,7 +315,14 @@
       () => void send({ action: "host-left" })
     );
     const unsubscribe = host.onPeerDisconnect((peer) => {
-      if (music.closed || !music.members.has(peer.did)) return;
+      // A card observes transport events before its join update is folded.
+      // Do not let a pre-join relay flap declare the party host gone.
+      if (
+        music.closed ||
+        !music.members.has(selfDid) ||
+        !music.members.has(peer.did)
+      )
+        return;
       if (peer.did === music.ownerDid) hostDeparture.observeDisconnect(peer.did);
       else if (selfDid === music.ownerDid)
         void send({ action: "prune", did: peer.did });
