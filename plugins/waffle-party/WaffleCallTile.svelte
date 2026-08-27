@@ -77,7 +77,7 @@
     // The card parks its position as tilePresence changes. Defer one microtask
     // so that parked handoff is available when this tile takes over.
     queueMicrotask(() => {
-      const handoff = takeHandoff();
+      const handoff = takeHandoff(current);
       if (handoff) handoffPosition = handoff.position;
     });
   });
@@ -106,6 +106,7 @@
       // Leaving the call: hand the live position to whichever surface
       // renders next, or the party restarts from the stale synced state.
       parkHandoff(
+        current,
         player ? player.currentTime() : localPosition,
         untrack(() => music.playing)
       );

@@ -58,23 +58,24 @@ export function livePosition(fallback: number): number {
  * from the STALE last-synced state.position - picks it up and re-syncs the
  * party. Consumed once, fresh only.
  */
-let _handoff: { position: number; playing: boolean; at: number } | null = null;
+let _handoff: { videoId: string; position: number; playing: boolean; at: number } | null = null;
 
-export function peekHandoff(): { position: number; playing: boolean } | null {
+export function peekHandoff(videoId?: string): { position: number; playing: boolean } | null {
   const h = _handoff;
-  if (!h || Date.now() - h.at > 15_000) return null;
+  if (!h || (videoId && h.videoId !== videoId) || Date.now() - h.at > 15_000)
+    return null;
   const elapsed = h.playing ? (Date.now() - h.at) / 1000 : 0;
   return { position: h.position + elapsed, playing: h.playing };
 }
 
-export function parkHandoff(position: number, playing: boolean): void {
+export function parkHandoff(videoId: string, position: number, playing: boolean): void {
   if (Number.isFinite(position) && position > 0) {
-    _handoff = { position, playing, at: Date.now() };
+    _handoff = { videoId, position, playing, at: Date.now() };
   }
 }
 
-export function takeHandoff(): { position: number; playing: boolean } | null {
-  const h = peekHandoff();
+export function takeHandoff(videoId?: string): { position: number; playing: boolean } | null {
+  const h = peekHandoff(videoId);
   _handoff = null;
   return h;
 }

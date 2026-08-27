@@ -67,33 +67,33 @@ describe("position source", () => {
 
 describe("renderer handoff", () => {
   it("hands a paused position over as-is, exactly once", () => {
-    parkHandoff(120, false);
-    expect(takeHandoff()).toEqual({ position: 120, playing: false });
+    parkHandoff("video", 120, false);
+    expect(takeHandoff("video")).toEqual({ position: 120, playing: false });
     expect(takeHandoff()).toBeNull();
   });
 
   it("extrapolates elapsed time while playing", () => {
-    parkHandoff(120, true);
+    parkHandoff("video", 120, true);
     vi.advanceTimersByTime(3000);
     expect(takeHandoff()?.position).toBeCloseTo(123);
   });
 
   it("does not extrapolate while paused", () => {
-    parkHandoff(120, false);
+    parkHandoff("video", 120, false);
     vi.advanceTimersByTime(3000);
     expect(takeHandoff()?.position).toBe(120);
   });
 
   it("expires after 15 seconds", () => {
-    parkHandoff(120, true);
+    parkHandoff("video", 120, true);
     vi.advanceTimersByTime(15_001);
     expect(takeHandoff()).toBeNull();
   });
 
   it("ignores useless positions", () => {
-    parkHandoff(0, true);
+    parkHandoff("video", 0, true);
     expect(takeHandoff()).toBeNull();
-    parkHandoff(NaN, true);
+    parkHandoff("video", NaN, true);
     expect(takeHandoff()).toBeNull();
   });
 });

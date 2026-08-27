@@ -100,7 +100,7 @@
       () => player?.currentTime() ?? localPosition
     );
     return () => {
-      parkHandoff(player?.currentTime() ?? localPosition, music.playing);
+      parkHandoff(current, player?.currentTime() ?? localPosition, music.playing);
       unregister();
     };
   });
@@ -112,7 +112,7 @@
   // saves US from restarting at the stale point.
   $effect(() => {
     if (tilePresence.count > 0 || !joined || !current || music.closed) return;
-    const h = takeHandoff();
+    const h = takeHandoff(current);
     if (h) {
       handoffPosition = h.position;
       handoffVideo = current;

@@ -184,6 +184,14 @@
             onStateChange: (event: { data: number }) => {
               if (event.data === 0) onEnded?.();
               if (event.data === 5) reportPlaylist();
+              if (event.data === 2 && playing) {
+                // YouTube may pause once while an iframe is handed from the
+                // card to the call. The party state is authoritative, so
+                // immediately resume when it still says playing.
+                window.setTimeout(() => {
+                  if (!disposed && playing) player?.playVideo();
+                }, 0);
+              }
               if (event.data === 1 || event.data === 2 || event.data === 5)
                 onPlayable?.();
             },
