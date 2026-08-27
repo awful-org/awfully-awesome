@@ -333,6 +333,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     let refreshInFlight = false;
     let refreshQueued = false;
     let wasClosed = music.closed;
+    let hasRefreshed = false;
     const refreshRecreate = () => {
       if (!music.closed) {
         canRecreate = false;
@@ -343,7 +344,8 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
         return;
       }
       refreshInFlight = true;
-      const force = !wasClosed;
+      const force = !hasRefreshed || !wasClosed;
+      hasRefreshed = true;
       wasClosed = true;
       void sharedCardsSnapshot(host, force)
         .then((cards) => {
