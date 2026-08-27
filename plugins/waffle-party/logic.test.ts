@@ -68,7 +68,7 @@ describe("music reducer", () => {
     expect(initialState({ videoId: first })).toEqual({
       queue: [first],
       currentIndex: 0,
-      playing: false,
+      playing: true,
       position: 0,
       activity: [],
       activitySeq: 0,
@@ -239,6 +239,17 @@ describe("music reducer", () => {
     expect(closed.playing).toBe(false);
   });
 
+  it("starts playback when a playlist resolves its first entry", () => {
+    const state = update(
+      initialState({ playlistId: "PL1234567890", ownerDid: "did:Host" }),
+      { action: "resolve-playlist", playlistId: "PL1234567890", videoIds: [first], done: true },
+      "Host"
+    );
+    expect(state.currentIndex).toBe(0);
+    expect(state.position).toBe(0);
+    expect(state.playing).toBe(true);
+  });
+
   it("loops a track or queue when an ended update targets the current item", () => {
     const track = {
       ...initialState({ videoId: first }),
@@ -282,5 +293,26 @@ describe("syncResponder", () => {
     members.delete("did:Owner");
     const withoutOwner = { ...s, members } as MusicState;
     expect(syncResponder(withoutOwner)).toBe("did:Bob");
+  });
+});
+
+describe("join synchronization", () => {
+  it("accepts a host sync at the live position", () => {
+    let state = initialState({ videoId: first, ownerDid: "did:Host" });
+    state = update(state, { action: "join" }, "Host");
+    state = update(state, { action: "join" }, "Bruno");
+    const synced = update(state, { action: "sync", index: 0, position: 42, playing: true }, "Host");
+    expect(synced.position).toBe(42);
+    expect(synced.playing).toBe(true);
+  });
+
+  it("accepts the fallback responder but not another listener", () => {
+    let state = initialState({ videoId: first, ownerDid: "did:Host" });
+    state = update(state, { action: "join" }, "Host");
+    state = update(state, { action: "join" }, "Bob");
+    state = update(state, { action: "join" }, "Carol");
+    state = { ...state, members: new Map([["did:Bob", "Bob"], ["did:Carol", "Carol"]]) };
+    expect(update(state, { action: "sync", index: 0, position: 33, playing: true }, "Bob").position).toBe(33);
+    expect(update(state, { action: "sync", index: 0, position: 99, playing: true }, "Carol")).toBe(state);
   });
 });

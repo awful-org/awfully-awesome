@@ -115,7 +115,7 @@ export function initialState(cardData: unknown): MusicState {
   return {
     queue: videoId ? [videoId] : [],
     currentIndex: videoId ? 0 : null,
-    playing: false,
+    playing: videoId !== null,
     position: 0,
     activity: [],
     activitySeq: 0,
@@ -216,7 +216,7 @@ export function reduce(
     }
     case "sync": {
       if (
-        ctx.senderDid !== music.ownerDid ||
+        ctx.senderDid !== syncResponder(music) ||
         !validIndex(data.index, music.queue) ||
         !validPosition(data.position) ||
         typeof data.playing !== "boolean"
@@ -275,6 +275,10 @@ export function reduce(
           music.currentIndex === null && videoIds.length
             ? music.queue.length
             : music.currentIndex,
+        playing:
+          music.currentIndex === null && videoIds.length
+            ? true
+            : music.playing,
       };
     }
     case "select": {
