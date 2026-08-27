@@ -390,7 +390,7 @@
     >
       Reading playlist…
     </p>{/if}
-  {#if !music.closed && joined}<div class="space-y-2">
+  {#if !music.closed && joined}<div class="space-y-1">
       <input
         class="w-full"
         type="range"
