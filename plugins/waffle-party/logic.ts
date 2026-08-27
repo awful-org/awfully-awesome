@@ -106,6 +106,19 @@ export function initialState(cardData: unknown): MusicState {
     ownerDid?: unknown;
   } | null;
   const videoId = validVideoId(data?.videoId) ? data.videoId : null;
+  const suppliedQueue = Array.isArray(data?.queue)
+    ? data.queue.filter(validVideoId)
+    : [];
+  const queue = suppliedQueue.length ? suppliedQueue : videoId ? [videoId] : [];
+  const currentIndex =
+    typeof data?.currentIndex === "number" &&
+    Number.isInteger(data.currentIndex) &&
+    data.currentIndex >= 0 &&
+    data.currentIndex < queue.length
+      ? data.currentIndex
+      : queue.length
+        ? 0
+        : null;
   const playlistId =
     typeof data?.playlistId === "string" &&
     /^[A-Za-z0-9_-]{10,128}$/.test(data.playlistId)
@@ -113,9 +126,9 @@ export function initialState(cardData: unknown): MusicState {
       : null;
   const ownerDid = typeof data?.ownerDid === "string" ? data.ownerDid : "";
   return {
-    queue: videoId ? [videoId] : [],
-    currentIndex: videoId ? 0 : null,
-    playing: videoId !== null,
+    queue,
+    currentIndex,
+    playing: currentIndex !== null,
     position: 0,
     activity: [],
     activitySeq: 0,

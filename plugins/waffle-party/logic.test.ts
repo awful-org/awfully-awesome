@@ -81,6 +81,14 @@ describe("music reducer", () => {
     expect(initialState({ videoId: "invalid" }).queue).toEqual([]);
   });
 
+  it("seeds a recreated queue at its selected track", () => {
+    const state = initialState({ queue: [first, second], currentIndex: 1 });
+    expect(state.queue).toEqual([first, second]);
+    expect(state.currentIndex).toBe(1);
+    expect(state.position).toBe(0);
+    expect(state.playing).toBe(true);
+  });
+
   it("adds a valid entry and records the verified actor", () => {
     const state = update(
       initialState({ videoId: first }),

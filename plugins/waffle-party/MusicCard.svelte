@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { List, Pause, Play, RefreshCw, RotateCcw, RotateCw, SkipForward, Trash2 } from "@lucide/svelte";
   import type { HostApi } from "$lib/plugins/api";
   import type { Message } from "$lib/transport/transport.svelte";
   import WafflePlayer from "./WafflePlayer.svelte";
@@ -15,6 +16,8 @@
     takeHandoff,
   } from "./tile-presence.svelte";
   import { cachedTitle, fetchTitle } from "./titles";
+  import { readAudioPrefs, writeAudioPrefs } from "./audio-prefs";
+  import { createHostDepartureGrace } from "./host-departure";
 
   interface Props {
     card: Message;
@@ -37,6 +40,7 @@
   let selfDid = $state(host.selfDid());
   const mountedAt = Date.now();
   let departureSent = false;
+  let canRecreate = $state(false);
   const current = $derived(
     music.currentIndex === null ? null : music.queue[music.currentIndex]
   );
@@ -102,7 +106,9 @@
     if (tilePresence.count > 0) return null;
     if (departureSent || music.closed || !joined) return null;
     departureSent = true;
-    return { action: selfDid === music.ownerDid ? "close" : "leave" };
+    // Other members observe the host disconnect and apply the shared
+    // reconnect grace; sending close here would bypass that protection.
+    return selfDid === music.ownerDid ? null : { action: "leave" };
   }
   async function togglePlayback() {
     const position = player?.currentTime() ?? localPosition;
@@ -128,6 +134,18 @@
     } finally {
       pending = null;
     }
+  }
+  function setVolume(value: number) {
+    volume = value;
+    void writeAudioPrefs(host.storage, value);
+  }
+  async function recreate() {
+    if (!canRecreate || !music.queue.length) return;
+    await host.sendCard({
+      queue: music.queue,
+      currentIndex: music.currentIndex ?? 0,
+      ownerDid: selfDid,
+    });
   }
   $effect(() => {
     const latest = music.activity.at(-1);
@@ -209,12 +227,23 @@
     }
   }
   onMount(() => {
+    void readAudioPrefs(host.storage).then((value) => (volume = value));
+    void host.cards().then((cards) => {
+      const mine = cards.filter((item) => item.senderDid === selfDid);
+      canRecreate =
+        music.closed && music.queue.length > 0 && mine.at(-1)?.id === card.id;
+    });
     const identityTimer = window.setInterval(() => {
       selfDid = host.selfDid();
     }, 250);
+    const hostDeparture = createHostDepartureGrace(
+      music.ownerDid,
+      () => host.peers(),
+      () => void send({ action: "host-left" })
+    );
     const unsubscribe = host.onPeerDisconnect((peer) => {
       if (music.closed || !music.members.has(peer.did)) return;
-      if (peer.did === music.ownerDid) void send({ action: "host-left" });
+      if (peer.did === music.ownerDid) hostDeparture.observeDisconnect(peer.did);
       else if (selfDid === music.ownerDid)
         void send({ action: "prune", did: peer.did });
     });
@@ -233,6 +262,7 @@
         selfDid,
         ...host.peers().map((peer) => peer.did),
       ]);
+      hostDeparture.observePeers();
       for (const did of music.members.keys()) {
         if (did !== music.ownerDid && !connected.has(did))
           void send({ action: "prune", did });
@@ -241,6 +271,7 @@
     return () => {
       window.clearInterval(identityTimer);
       window.clearInterval(pruneTimer);
+      hostDeparture.dispose();
       unsubscribe();
       unsubscribeBeforeDisconnect();
       const action = departureAction();
@@ -260,7 +291,13 @@
   </div>
   {#if music.closed}<p class="py-8 text-center text-sm text-muted-foreground">
       The party is over.. heh..~
-    </p>{:else if joined && (current || pendingPlaylist)}<div class="space-y-1">
+    </p>{#if canRecreate}<button
+        type="button"
+        class="mx-auto flex items-center gap-1 rounded border border-primary px-3 py-2 text-xs text-primary"
+        onclick={recreate}
+        aria-label="Recreate party"
+      ><RefreshCw class="size-3.5" /> Recreate party</button
+    >{/if}{:else if joined && (current || pendingPlaylist)}<div class="space-y-1">
       {#if tilePresence.count > 0}
         <!-- ONE renderer at a time: while the call tile plays the party,
              this card is just a pointer to it. No second player, no muted
@@ -333,7 +370,7 @@
         <button
           class="rounded bg-primary px-3 py-2 text-primary-foreground disabled:opacity-60"
           disabled={pending !== null}
-          onclick={togglePlayback}>{music.playing ? "Pause" : "Play"}</button
+          onclick={togglePlayback} aria-label={music.playing ? "Pause" : "Play"}>{#if music.playing}<Pause class="size-4" />{:else}<Play class="size-4" />{/if}</button
         >
         <button
           class="rounded border border-border px-3 py-2 disabled:opacity-60"
@@ -342,25 +379,25 @@
             send(
               { action: "seek", position: Math.max(0, localPosition - 10) },
               "Seeking…"
-            )}>−10s</button
+            )} aria-label="Back 10 seconds"><RotateCcw class="size-4" /></button
         >
         <button
           class="rounded border border-border px-3 py-2 disabled:opacity-60"
           disabled={pending !== null}
           onclick={() =>
             send({ action: "seek", position: localPosition + 10 }, "Seeking…")}
-          >+10s</button
+          aria-label="Forward 10 seconds"><RotateCw class="size-4" /></button
         >
         <button
           class="rounded border border-border px-3 py-2 disabled:opacity-60"
           disabled={pending !== null}
-          onclick={() => send({ action: "skip" }, "Skipping…")}>Skip</button
+          onclick={() => send({ action: "skip" }, "Skipping…")} aria-label="Skip"><SkipForward class="size-4" /></button
         >
         {/if}
         <button
           class="rounded border border-border px-3 py-2"
           onclick={() => (queueOpen = !queueOpen)}
-          >{queueOpen ? "Hide queue" : "Show queue"}</button
+          aria-label={queueOpen ? "Hide queue" : "Show queue"}><List class="size-4" /></button
         >
         {#if selfDid === music.ownerDid}<button
             class="rounded border border-destructive px-3 py-2 text-destructive disabled:opacity-60"
@@ -387,6 +424,7 @@
             min="0"
             max="100"
             bind:value={volume}
+            onchange={(event) => setVolume(Number(event.currentTarget.value))}
           /></label
         >
         {/if}
@@ -425,7 +463,7 @@
                 disabled={pending !== null}
                 onclick={() =>
                   send({ action: "remove", index }, "Removing track…")}
-                >Remove</button
+                aria-label="Remove track"><Trash2 class="size-4" /></button
               >
             </div>{/each}
         </div>
