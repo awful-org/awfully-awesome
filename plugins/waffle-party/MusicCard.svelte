@@ -20,7 +20,6 @@
   import WafflePlayer from "./WafflePlayer.svelte";
   import {
     playlistIdFromUrl,
-    syncResponder,
     videoIdFromUrl,
     type MusicState,
   } from "./logic";
@@ -47,8 +46,9 @@ let cardsSnapshotValue: Array<{
 }> = [];
 let cardsSnapshotAt = 0;
 
-function sharedCardsSnapshot(host: HostApi) {
-  if (Date.now() - cardsSnapshotAt < 1_000) return Promise.resolve(cardsSnapshotValue);
+function sharedCardsSnapshot(host: HostApi, force = false) {
+  if (!force && Date.now() - cardsSnapshotAt < 1_000)
+    return Promise.resolve(cardsSnapshotValue);
   if (cardsSnapshot) return cardsSnapshot;
   cardsSnapshot = host.cards().then((cards) => {
     cardsSnapshotValue = cards;
@@ -253,7 +253,7 @@ function sharedCardsSnapshot(host: HostApi) {
       // The tile is the renderer: it owns the join-sync too, and this
       // card's player is not even mounted to read a position from.
       tilePresence.count > 0 ||
-      selfDid !== syncResponder(music) ||
+      selfDid !== music.ownerDid ||
       latest?.action !== "joined" ||
       music.activitySeq === syncedJoinCount ||
       music.currentIndex === null
@@ -332,6 +332,7 @@ function sharedCardsSnapshot(host: HostApi) {
     void readAudioPrefs(host.storage).then((value) => (volume = value));
     let refreshInFlight = false;
     let refreshQueued = false;
+    let wasClosed = music.closed;
     const refreshRecreate = () => {
       if (!music.closed) {
         canRecreate = false;
@@ -342,7 +343,9 @@ function sharedCardsSnapshot(host: HostApi) {
         return;
       }
       refreshInFlight = true;
-      void sharedCardsSnapshot(host)
+      const force = !wasClosed;
+      wasClosed = true;
+      void sharedCardsSnapshot(host, force)
         .then((cards) => {
           const mine = cards.filter((item) => item.senderDid === selfDid);
           const hasActiveParty = cards.some((item) => {

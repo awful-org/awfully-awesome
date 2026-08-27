@@ -11,7 +11,7 @@
   import type { HostApi } from "$lib/plugins/api";
   import type { Message } from "$lib/transport/transport.svelte";
   import WafflePlayer from "./WafflePlayer.svelte";
-  import { syncResponder, type MusicState } from "./logic";
+  import { type MusicState } from "./logic";
   import {
     tilePresence,
     publishLiveDuration,
@@ -152,7 +152,7 @@
   $effect(() => {
     const latest = music.activity.at(-1);
     if (
-      selfDid !== syncResponder(music) ||
+        selfDid !== music.ownerDid ||
       latest?.action !== "joined" ||
       music.activitySeq === syncedJoinCount ||
       music.currentIndex === null
