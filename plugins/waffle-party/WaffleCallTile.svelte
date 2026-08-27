@@ -14,6 +14,7 @@
   import { syncResponder, type MusicState } from "./logic";
   import {
     tilePresence,
+    publishLiveDuration,
     peekHandoff,
     publishLivePosition,
     registerPositionSource,
@@ -208,7 +209,10 @@
           publishLivePosition(p, music.playing);
           if (!seeking) seekValue = p;
         }}
-        onDuration={(d) => (duration = d)}
+        onDuration={(d) => {
+          duration = d;
+          publishLiveDuration(d);
+        }}
         onEnded={ended}
       />
     </div>

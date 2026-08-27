@@ -28,6 +28,7 @@
     tilePresence,
     registerPositionSource,
     livePosition,
+    liveDurationState,
     parkHandoff,
     peekHandoff,
     takeHandoff,
@@ -49,6 +50,8 @@
   let player: WafflePlayer | null = null;
   let localPosition = $state(music.position);
   let duration = $state(0);
+  let seekValue = $state(music.position);
+  let seeking = $state(false);
   let syncedJoinCount = 0;
   let titles = $state<Record<string, string>>({});
   let volume = $state(100);
@@ -67,6 +70,10 @@
       ? livePosition(music.position)
       : handoff?.position ?? localPosition;
   });
+  const rendererDuration = $derived(
+    tilePresence.count > 0 ? liveDurationState.duration : duration
+  );
+  const displayedPosition = $derived(seeking ? seekValue : rendererPosition);
   const joined = $derived(music.members.has(selfDid));
   const pendingPlaylist = $derived(music.playlistRequests[0] ?? null);
   const listeners = $derived(
@@ -156,6 +163,10 @@
     const mode =
       music.loop === "off" ? "track" : music.loop === "track" ? "queue" : "off";
     await send({ action: "loop", mode });
+  }
+  function commitSeek() {
+    seeking = false;
+    void send({ action: "seek", position: seekValue });
   }
   function formatTime(seconds: number): string {
     if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
@@ -415,16 +426,19 @@
         class="w-full"
         type="range"
         min="0"
-        max={duration || 0}
+        max={rendererDuration || 0}
         step="1"
-        value={rendererPosition}
-        disabled={duration <= 0}
-        onchange={() => send({ action: "seek", position: rendererPosition })}
-        oninput={(event) => (localPosition = Number(event.currentTarget.value))}
+        value={displayedPosition}
+        disabled={rendererDuration <= 0}
+        onchange={commitSeek}
+        oninput={(event) => {
+          seekValue = Number(event.currentTarget.value);
+          seeking = true;
+        }}
         aria-label="Seek video"
       />
       <div class="-mt-2 pb-1 text-right font-mono text-[11px] text-muted-foreground">
-        {formatTime(rendererPosition)} / {formatTime(duration)}
+        {formatTime(displayedPosition)} / {formatTime(rendererDuration)}
       </div>
       <div class="space-y-2 text-xs">
         <div class="flex items-center gap-2">
@@ -458,7 +472,7 @@
             onclick={cycleLoop}
             aria-label={`Loop mode: ${music.loop}`}
             title={`Loop mode: ${music.loop}. Click to change.`}
-          >{#if music.loop === "off"}<Ban class="size-4" /> Loop off{:else if music.loop === "track"}<Repeat1 class="size-4" /> Loop track{:else}<ListMusic class="size-4" /> Loop queue{/if}</button>
+          >{#if music.loop === "off"}<Ban class="size-4" />{:else if music.loop === "track"}<Repeat1 class="size-4" />{:else}<ListMusic class="size-4" />{/if}</button>
           </div>
           <div class="ml-auto flex gap-2">
           {#if selfDid === music.ownerDid}<button

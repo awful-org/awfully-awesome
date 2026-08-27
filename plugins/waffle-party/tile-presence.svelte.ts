@@ -10,6 +10,7 @@ export const livePositionState = $state({
   playing: false,
   published: false,
 });
+export const liveDurationState = $state({ duration: 0 });
 
 export function publishLivePosition(position: number, playing: boolean): void {
   if (Number.isFinite(position) && position >= 0) {
@@ -17,6 +18,11 @@ export function publishLivePosition(position: number, playing: boolean): void {
     livePositionState.playing = playing;
     livePositionState.published = true;
   }
+}
+
+export function publishLiveDuration(duration: number): void {
+  if (Number.isFinite(duration) && duration >= 0)
+    liveDurationState.duration = duration;
 }
 
 /**

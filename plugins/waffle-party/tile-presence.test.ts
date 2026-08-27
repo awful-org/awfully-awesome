@@ -9,8 +9,10 @@ vi.hoisted(() => {
 
 import {
   livePosition,
+  liveDurationState,
   parkHandoff,
   publishLivePosition,
+  publishLiveDuration,
   registerPositionSource,
   takeHandoff,
 } from "./tile-presence.svelte";
@@ -47,6 +49,11 @@ describe("position source", () => {
   it("publishes the renderer time for surfaces without a player", () => {
     publishLivePosition(142, true);
     expect(livePosition(7)).toBe(142);
+  });
+
+  it("publishes the renderer duration for a shared seek bar", () => {
+    publishLiveDuration(205);
+    expect(liveDurationState.duration).toBe(205);
   });
 
   it("a stale unregister does not clear a newer source", () => {
