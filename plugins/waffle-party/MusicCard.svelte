@@ -4,12 +4,12 @@
     Ban,
     CircleOff,
     List,
+    ListMusic,
     LogIn,
     LogOut,
     Pause,
     Play,
     Plus,
-    Repeat,
     Repeat1,
     SkipBack,
     SkipForward,
@@ -425,17 +425,19 @@
             onclick={() => send({ action: "skip" }, "Skipping…")} aria-label="Skip" title="Skip"><SkipForward class="size-4" /></button
           >
           <button
-            class="rounded border border-border px-3 py-2"
+            class="rounded border border-border px-3 py-2 {queueOpen
+              ? 'border-primary bg-primary text-primary-foreground'
+              : ''}"
             onclick={() => (queueOpen = !queueOpen)}
             aria-label={queueOpen ? "Hide queue" : "Show queue"} title={queueOpen ? "Hide queue" : "Show queue"}><List class="size-4" /></button
           >
           <button
-            class="rounded border border-border px-3 py-2 disabled:opacity-60"
+            class="flex items-center gap-1 rounded border border-border px-3 py-2 disabled:opacity-60"
             disabled={pending !== null}
             onclick={cycleLoop}
             aria-label={`Loop mode: ${music.loop}`}
             title={`Loop mode: ${music.loop}. Click to change.`}
-          >{#if music.loop === "off"}<Ban class="size-4" />{:else if music.loop === "track"}<Repeat1 class="size-4" />{:else}<Repeat class="size-4" />{/if}</button>
+          >{#if music.loop === "off"}<Ban class="size-4" /> Loop off{:else if music.loop === "track"}<Repeat1 class="size-4" /> Loop track{:else}<ListMusic class="size-4" /> Loop queue{/if}</button>
           </div>
           <div class="ml-auto flex gap-2">
           {#if selfDid === music.ownerDid}<button
@@ -457,7 +459,7 @@
         </div>
         <label class="flex items-center gap-2"
           >Vol <input
-            class="min-w-0 flex-1"
+            class="w-1/4 max-w-24"
             type="range"
             min="0"
             max="100"
