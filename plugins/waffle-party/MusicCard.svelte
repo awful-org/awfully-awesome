@@ -49,6 +49,8 @@
   let error = $state("");
   let player: WafflePlayer | null = null;
   let localPosition = $state(music.position);
+  let handoffPosition = $state<number | null>(null);
+  let handoffVideo = $state<string | null>(null);
   let duration = $state(0);
   let seekValue = $state(music.position);
   let seeking = $state(false);
@@ -111,9 +113,12 @@
   $effect(() => {
     if (tilePresence.count > 0 || !joined || !current || music.closed) return;
     const h = takeHandoff();
-    if (h && Math.abs(h.position - music.position) > 2) {
+    if (h) {
+      handoffPosition = h.position;
+      handoffVideo = current;
       localPosition = h.position;
-      void send({ action: "seek", position: Math.floor(h.position) });
+      if (Math.abs(h.position - music.position) > 2)
+        void send({ action: "seek", position: Math.floor(h.position) });
     }
   });
 
@@ -385,7 +390,9 @@
         videoId={current}
         playlistId={current ? null : pendingPlaylist}
         playing={current ? music.playing : false}
-        position={peekHandoff()?.position ?? music.position}
+        position={
+          handoffVideo === current ? handoffPosition ?? music.position : music.position
+        }
         {volume}
         onPosition={(value) => (localPosition = value)}
         onDuration={(value) => (duration = value)}

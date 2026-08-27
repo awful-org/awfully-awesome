@@ -119,12 +119,16 @@
     if (!player || !ready) return;
     player.setVolume(volume);
     if (!videoId) return;
-    if (next === last) return;
-    last = next;
-    if (loaded !== videoId) {
-      loaded = videoId;
-      player.loadVideoById(videoId, position);
-    } else player.seekTo(position, true);
+    if (next !== last) {
+      last = next;
+      if (loaded !== videoId) {
+        loaded = videoId;
+        player.loadVideoById(videoId, position);
+      } else player.seekTo(position, true);
+    }
+    // Playback state must be asserted even when the position tuple did not
+    // change: a newly-created iframe can report the same position while still
+    // paused after a renderer handoff.
     playing ? player.playVideo() : player.pauseVideo();
   }
 
