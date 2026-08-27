@@ -13,6 +13,7 @@ export type ActivityAction =
   | "closed"
   | "host left"
   | "joined"
+  | "sync requested"
   | "left";
 
 export interface Activity {
@@ -234,6 +235,15 @@ export function reduce(
       const members = new Map(music.members);
       members.set(ctx.senderDid, ctx.senderName);
       return withActivity({ ...music, members }, ctx, "joined", null);
+    }
+    case "resync": {
+      if (!music.members.has(ctx.senderDid)) return music;
+      return withActivity(
+        music,
+        ctx,
+        "sync requested",
+        music.currentIndex === null ? null : music.queue[music.currentIndex]
+      );
     }
     case "leave": {
       if (!music.members.has(ctx.senderDid) || ctx.senderDid === music.ownerDid)

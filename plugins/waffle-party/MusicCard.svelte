@@ -140,8 +140,9 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       handoffPosition = h.position;
       handoffVideo = current;
       localPosition = h.position;
-      if (Math.abs(h.position - music.position) > 2)
+      if (selfDid === music.ownerDid && Math.abs(h.position - music.position) > 2)
         void send({ action: "seek", position: Math.floor(h.position) });
+      else if (selfDid !== music.ownerDid) void send({ action: "resync" });
     }
   });
 
@@ -254,7 +255,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       // card's player is not even mounted to read a position from.
       tilePresence.count > 0 ||
       selfDid !== music.ownerDid ||
-      latest?.action !== "joined" ||
+      latest?.action !== "joined" && latest?.action !== "sync requested" ||
       music.activitySeq === syncedJoinCount ||
       music.currentIndex === null
     )

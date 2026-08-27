@@ -153,7 +153,7 @@
     const latest = music.activity.at(-1);
     if (
         selfDid !== music.ownerDid ||
-      latest?.action !== "joined" ||
+      latest?.action !== "joined" && latest?.action !== "sync requested" ||
       music.activitySeq === syncedJoinCount ||
       music.currentIndex === null
     )
