@@ -35,7 +35,30 @@
   } from "./tile-presence.svelte";
   import { cachedTitle, fetchTitle } from "./titles";
   import { readAudioPrefs, writeAudioPrefs } from "./audio-prefs";
-  import { createHostDepartureGrace } from "./host-departure";
+import { createHostDepartureGrace } from "./host-departure";
+
+let cardsSnapshot:
+  | Promise<Array<{ id: string; senderDid: string; state?: unknown }>>
+  | null = null;
+let cardsSnapshotValue: Array<{
+  id: string;
+  senderDid: string;
+  state?: unknown;
+}> = [];
+let cardsSnapshotAt = 0;
+
+function sharedCardsSnapshot(host: HostApi) {
+  if (Date.now() - cardsSnapshotAt < 1_000) return Promise.resolve(cardsSnapshotValue);
+  if (cardsSnapshot) return cardsSnapshot;
+  cardsSnapshot = host.cards().then((cards) => {
+    cardsSnapshotValue = cards;
+    cardsSnapshotAt = Date.now();
+    return cards;
+  }).finally(() => {
+    cardsSnapshot = null;
+  });
+  return cardsSnapshot;
+}
 
   interface Props {
     card: Message;
@@ -319,8 +342,7 @@
         return;
       }
       refreshInFlight = true;
-      void host
-        .cards()
+      void sharedCardsSnapshot(host)
         .then((cards) => {
           const mine = cards.filter((item) => item.senderDid === selfDid);
           const hasActiveParty = cards.some((item) => {
