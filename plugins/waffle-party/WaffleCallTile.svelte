@@ -7,6 +7,7 @@
     SkipForward,
     RotateCcw,
     RotateCw,
+    LogIn,
     Volume2,
   } from "@lucide/svelte";
   import type { HostApi } from "$lib/plugins/api";
@@ -193,9 +194,11 @@
           e.stopPropagation();
           void send({ action: "join" });
         }}
-        class="pointer-events-auto cursor-pointer rounded-full border border-border bg-background/95 px-4 py-2 font-mono text-xs text-foreground shadow-sm hover:border-primary/60"
+        aria-label="Join party"
+        title="Join party"
+        class="pointer-events-auto cursor-pointer rounded-full border border-border bg-background/95 p-2 text-foreground shadow-sm hover:border-primary/60"
       >
-        Join the party ({music.members.size} listening)
+        <LogIn class="size-4" />
       </button>
     </div>
   {:else if current}
@@ -230,6 +233,7 @@
         void togglePlayback();
       }}
       aria-label={music.playing ? "Pause for everyone" : "Play for everyone"}
+      title={music.playing ? "Pause for everyone" : "Play for everyone"}
       class="pointer-events-auto absolute left-1/2 top-1/2 z-20 grid size-14 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full bg-black/60 text-white opacity-0 transition-opacity hover:opacity-100 focus-visible:opacity-100"
     >
       {#if music.playing}<Pause class="size-6" />{:else}<Play
@@ -269,6 +273,7 @@
           onclick={() =>
             seekTo(Math.max(0, (player?.currentTime() ?? seekValue) - 10))}
           aria-label="Back 10 seconds"
+          title="Back 10 seconds"
           class="cursor-pointer rounded bg-white/10 p-1.5 text-white hover:bg-white/20"
         >
           <RotateCcw class="size-3.5" />
@@ -277,6 +282,7 @@
           type="button"
           onclick={previous}
           aria-label="Previous track"
+          title="Previous track"
           class="cursor-pointer rounded bg-white/10 p-1.5 text-white hover:bg-white/20"
         >
           <SkipBack class="size-3.5" />
@@ -285,6 +291,7 @@
           type="button"
           onclick={togglePlayback}
           aria-label={music.playing ? "Pause for everyone" : "Play for everyone"}
+          title={music.playing ? "Pause for everyone" : "Play for everyone"}
           class="cursor-pointer rounded bg-white/15 p-1.5 text-white hover:bg-white/25"
         >
           {#if music.playing}<Pause class="size-3.5" />{:else}<Play
@@ -295,6 +302,7 @@
           type="button"
           onclick={skip}
           aria-label="Next track"
+          title="Next track"
           class="cursor-pointer rounded bg-white/10 p-1.5 text-white hover:bg-white/20"
         >
           <SkipForward class="size-3.5" />
@@ -303,6 +311,7 @@
           type="button"
           onclick={() => seekTo((player?.currentTime() ?? seekValue) + 10)}
           aria-label="Forward 10 seconds"
+          title="Forward 10 seconds"
           class="cursor-pointer rounded bg-white/10 p-1.5 text-white hover:bg-white/20"
         >
           <RotateCw class="size-3.5" />
