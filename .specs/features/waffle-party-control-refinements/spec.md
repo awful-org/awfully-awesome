@@ -47,6 +47,7 @@ chat, and navigate a looped queue predictably so shared playback stays usable.
 9. WHEN a party card renders its seek bar, THEN the system SHALL show the current and total video time in `m:ss / m:ss` form. <!-- state-driven -->
 10. WHEN a party member views the loop control, THEN the system SHALL show its mode through an icon and tooltip without rendering a textual mode label. <!-- state-driven -->
 11. WHEN party controls render, THEN loop and leave/disband SHALL occupy a right-aligned control group with leave/disband as its final action. <!-- state-driven -->
+12. WHEN the call tile is the active renderer, THEN the chat card timer and playback actions SHALL use its live position, and switching renderers SHALL seed the next player from the handoff position. <!-- event-driven -->
 
 ## Requirement Traceability
 
@@ -63,3 +64,4 @@ chat, and navigate a looped queue predictably so shared playback stays usable.
 | WCR-09 | Done |
 | WCR-10 | Done |
 | WCR-11 | Done |
+| WCR-12 | Done |

@@ -53,3 +53,14 @@ workspace; typecheck and production build cover the rendered paths.
 `pnpm check`, `pnpm test`, and `pnpm build` all passed after the refinement.
 The change is visual wiring over already-tested loop state; no separate
 behavior-level mutation target exists without a Svelte component harness.
+
+## Iteration 3: live renderer position — PASS
+
+- WCR-12: `plugins/waffle-party/tile-presence.svelte.ts:8` publishes the active
+  renderer position reactively; `MusicCard.svelte:60` derives the card position
+  from that source and `MusicCard.svelte:136` samples it for play/pause. The
+  renderer handoff is seeded into both player surfaces at
+  `MusicCard.svelte:364` and `WaffleCallTile.svelte:224`.
+- `plugins/waffle-party/tile-presence.test.ts:49` asserts published live time
+  is returned to surfaces without a player.
+- Final targeted gate: 37 files / 301 tests passed; `pnpm check` passed.
