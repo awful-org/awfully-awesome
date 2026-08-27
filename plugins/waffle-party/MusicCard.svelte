@@ -186,13 +186,28 @@
   async function join() {
     pending = "Joining party…";
     try {
+      // Publish membership first. Scanning and hydrating every plugin card can
+      // be slow while the relay is recovering, and must not delay this party's
+      // join handshake.
+      await host.sendUpdate(card.id, { action: "join" });
       const cards = await host.cards();
       await Promise.all(
         cards
-          .filter((item) => item.id !== card.id)
+          .filter(
+            (item) => {
+              const state = item.state as MusicState | undefined;
+              return (
+                item.id !== card.id &&
+                !!state &&
+                !state.closed &&
+                state.members.has(selfDid)
+              );
+            }
+          )
           .map((item) => host.sendUpdate(item.id, { action: "leave" }))
       );
-      await host.sendUpdate(card.id, { action: "join" });
+    } catch (err) {
+      console.warn("[waffle-party] joined party; old-party cleanup failed:", err);
     } finally {
       pending = null;
     }
