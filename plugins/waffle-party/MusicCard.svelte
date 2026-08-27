@@ -405,8 +405,9 @@
       <div class="text-right font-mono text-[11px] text-muted-foreground">
         {formatTime(localPosition)} / {formatTime(duration)}
       </div>
-      <div class="flex flex-wrap gap-2 text-xs">
-        <div class="flex flex-wrap gap-2">
+      <div class="space-y-2 text-xs">
+        <div class="flex items-center gap-2">
+          <div class="flex gap-2">
           <button
             class="rounded bg-primary px-3 py-2 text-primary-foreground disabled:opacity-60"
             disabled={pending !== null}
@@ -428,17 +429,6 @@
             onclick={() => (queueOpen = !queueOpen)}
             aria-label={queueOpen ? "Hide queue" : "Show queue"} title={queueOpen ? "Hide queue" : "Show queue"}><List class="size-4" /></button
           >
-        </div>
-        <label class="flex items-center gap-1"
-          >Vol <input
-            type="range"
-            min="0"
-            max="100"
-            bind:value={volume}
-            onchange={(event) => setVolume(Number(event.currentTarget.value))}
-          /></label
-        >
-        <div class="ml-auto flex gap-2">
           <button
             class="rounded border border-border px-3 py-2 disabled:opacity-60"
             disabled={pending !== null}
@@ -446,6 +436,8 @@
             aria-label={`Loop mode: ${music.loop}`}
             title={`Loop mode: ${music.loop}. Click to change.`}
           >{#if music.loop === "off"}<Ban class="size-4" />{:else if music.loop === "track"}<Repeat1 class="size-4" />{:else}<Repeat class="size-4" />{/if}</button>
+          </div>
+          <div class="ml-auto flex gap-2">
           {#if selfDid === music.ownerDid}<button
               class="rounded border border-destructive px-3 py-2 text-destructive disabled:opacity-60"
               disabled={pending !== null}
@@ -461,7 +453,18 @@
               title="Leave party"
               ><LogOut class="size-4" /></button
             >{/if}
+          </div>
         </div>
+        <label class="flex items-center gap-2"
+          >Vol <input
+            class="min-w-0 flex-1"
+            type="range"
+            min="0"
+            max="100"
+            bind:value={volume}
+            onchange={(event) => setVolume(Number(event.currentTarget.value))}
+          /></label
+        >
       </div>
     </div>
     {#if queueOpen}
