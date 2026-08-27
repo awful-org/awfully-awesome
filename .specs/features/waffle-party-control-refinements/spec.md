@@ -43,6 +43,10 @@ chat, and navigate a looped queue predictably so shared playback stays usable.
 5. WHEN the user activates the loop button, THEN the system SHALL cycle loop mode in the order off, track, queue, off. <!-- event-driven -->
 6. WHEN next is activated at the final queue item, THEN track loop SHALL restart that item, queue loop SHALL select the first item, and loop off SHALL stop playback. <!-- event-driven -->
 7. WHEN previous is activated, THEN the system SHALL select the prior queue item; at the first item queue loop SHALL select the final item and track loop SHALL restart the current item. <!-- event-driven -->
+8. WHEN an eligible closed party renders its recreation control, THEN the system SHALL center an icon-free `Recruwuate party :3` button with a muted gray background. <!-- state-driven -->
+9. WHEN a party card renders its seek bar, THEN the system SHALL show the current and total video time in `m:ss / m:ss` form. <!-- state-driven -->
+10. WHEN a party member views the loop control, THEN the system SHALL show its mode through an icon and tooltip without rendering a textual mode label. <!-- state-driven -->
+11. WHEN party controls render, THEN loop and leave/disband SHALL occupy a right-aligned control group with leave/disband as its final action. <!-- state-driven -->
 
 ## Requirement Traceability
 
@@ -55,3 +59,7 @@ chat, and navigate a looped queue predictably so shared playback stays usable.
 | WCR-05 | Done |
 | WCR-06 | Done |
 | WCR-07 | Done |
+| WCR-08 | Done |
+| WCR-09 | Done |
+| WCR-10 | Done |
+| WCR-11 | Done |

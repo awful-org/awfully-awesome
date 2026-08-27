@@ -37,3 +37,19 @@ the minimal host API support needed to determine active party membership. Tests
 assert resulting queue state, position, and playing state rather than only send
 calls. Interactive two-client UAT is not available in this non-interactive
 workspace; typecheck and production build cover the rendered paths.
+
+## Iteration 2: card control layout — PASS
+
+- WCR-08: `plugins/waffle-party/MusicCard.svelte:334` renders the centered,
+  icon-free recreation button with muted gray styling.
+- WCR-09: `plugins/waffle-party/MusicCard.svelte:405` renders elapsed and total
+  time; `MusicCard.svelte:143` formats valid values as `m:ss`.
+- WCR-10: `plugins/waffle-party/MusicCard.svelte:448` renders the three loop
+  icons and the title attribute carries the mode; no text label is rendered.
+- WCR-11: `plugins/waffle-party/MusicCard.svelte:441` establishes the
+  right-aligned group and `MusicCard.svelte:449` keeps leave/disband as its
+  final action.
+
+`pnpm check`, `pnpm test`, and `pnpm build` all passed after the refinement.
+The change is visual wiring over already-tested loop state; no separate
+behavior-level mutation target exists without a Svelte component harness.
