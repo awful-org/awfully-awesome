@@ -166,6 +166,15 @@
                 playlistReporter = window.setInterval(reportPlaylist, 250);
                 reportPlaylist();
               } else sync();
+              // Loading a new iframe can briefly leave YouTube paused even
+              // though the shared party state is still playing. Re-assert
+              // playback after the initial load without changing paused
+              // parties or their synchronized position.
+              if (playing) {
+                window.setTimeout(() => {
+                  if (!disposed && playing) player?.playVideo();
+                }, 0);
+              }
               onReady?.();
             },
             onStateChange: (event: { data: number }) => {

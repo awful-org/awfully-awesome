@@ -15,7 +15,6 @@
   import {
     tilePresence,
     publishLiveDuration,
-    peekHandoff,
     publishLivePosition,
     registerPositionSource,
     parkHandoff,
@@ -56,6 +55,17 @@
   let duration = $state(0);
   let seeking = $state(false);
   let seekValue = $state(0);
+  // Consume a parked card position only once when this renderer takes over.
+  // Keeping peekHandoff() in the player prop would pin the iframe to the
+  // parked timestamp and prevent later shared seek actions from reaching it.
+  const initialHandoff = takeHandoff();
+  let handoffPosition = $state<number | null>(initialHandoff?.position ?? null);
+  let handoffVideo = $state<string | null>(current);
+  $effect(() => {
+    if (current === handoffVideo) return;
+    handoffVideo = current;
+    handoffPosition = null;
+  });
   $effect(() => {
     void readAudioPrefs(host.storage).then((value) => (volume = value));
   });
@@ -201,7 +211,7 @@
         bind:this={player}
         videoId={current}
         playing={music.playing}
-        position={peekHandoff()?.position ?? music.position}
+        position={handoffPosition ?? music.position}
         {volume}
         controls={false}
         onPosition={(p) => {
