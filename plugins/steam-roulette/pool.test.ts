@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { initialState, reduce, type RouletteState } from "./logic";
+import {
+  initialState,
+  reduce,
+  sampleSpinPool,
+  SPIN_POOL_CAP,
+  type RouletteState,
+} from "./logic";
 
 const ctx = (did: string, name = "N", id = "u1", lamport = 1) => ({
   senderDid: did, senderName: name, updateId: id, lamport, ephemeral: false,
@@ -71,5 +77,27 @@ describe("spin pool (multiplayer filter)", () => {
     const b = reduce(s, { data: { action: "spin" } }, ctx("did:a", "A", "same")) as RouletteState;
     expect(a.winnerAppid).toBe(b.winnerAppid);
     expect(a.potSize).toBe(3);
+  });
+});
+
+describe("sampleSpinPool", () => {
+  it("passes small pools through untouched", () => {
+    const small = [1, 2, 3];
+    expect(sampleSpinPool(small)).toBe(small);
+  });
+
+  it("caps a big pool under the 4KB update budget, deterministically", () => {
+    // ~590 shared appids already blew the cap in the wild; make it 3000.
+    const big = Array.from({ length: 3000 }, (_, i) => (i + 1) * 137);
+    const a = sampleSpinPool(big);
+    expect(a).toEqual(sampleSpinPool(big));
+    expect(a).toHaveLength(SPIN_POOL_CAP);
+    expect(
+      JSON.stringify({ action: "spin", pool: a }).length
+    ).toBeLessThan(4096);
+    // Every sampled id is a real pool member and order is preserved.
+    const bigSet = new Set(big);
+    expect(a.every((id) => bigSet.has(id))).toBe(true);
+    expect([...a].sort((x, y) => x - y)).toEqual(a);
   });
 });

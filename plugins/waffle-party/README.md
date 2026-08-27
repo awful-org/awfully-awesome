@@ -43,6 +43,11 @@ PLUGIN_SOURCES=awful-org/awfully-awesome#<tag-or-sha>
 None. The plugin uses the official visible YouTube embed in each participant's
 browser and needs no API key or relay configuration.
 
+Privacy note: track titles resolve through YouTube's public oEmbed endpoint
+from each participant's browser, so YouTube sees participants' IPs for queued
+titles - the same party the embedded player itself already talks to during
+playback.
+
 It does not extract audio, inject music into voice calls, search YouTube, or
 promise frame-accurate synchronization. Browser autoplay rules can require each
 participant to press Play once.

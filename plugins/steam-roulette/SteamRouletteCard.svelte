@@ -2,7 +2,12 @@
   import { Button } from "$lib/components/ui/button";
   import type { Message } from "$lib/transport/transport.svelte";
   import type { HostApi } from "$lib/plugins/api";
-  import { commonGames, isComplete, type RouletteState } from "./logic";
+  import {
+    commonGames,
+    isComplete,
+    sampleSpinPool,
+    type RouletteState,
+  } from "./logic";
   import { chunkAppids, fetchIsMultiplayer, fetchOwnedGames, resolveSteamId } from "./steam-api";
 
   interface Props {
@@ -180,13 +185,27 @@
     }
   }
 
+  let spinError = $state<string | null>(null);
   async function spin() {
     if (spinningSend || state.spun || common.length === 0) return;
     spinningSend = true;
+    spinError = null;
     try {
-      await host.sendUpdate(card.id, { action: "spin", pool });
+      // Only a real multiplayer subset rides the wire: the reducer's
+      // no-pool fallback IS the full common set, and a big shared library
+      // serialized into the update blows the host's 4KB cap. A too-big
+      // subset is thinned with sampleSpinPool - every client folds the
+      // pool that was SENT, so a sender-side sample stays deterministic.
+      const filtered = multiplayerOnly && mpPool.length > 0;
+      await host.sendUpdate(
+        card.id,
+        filtered
+          ? { action: "spin", pool: sampleSpinPool(pool) }
+          : { action: "spin" }
+      );
     } catch (err) {
       console.error("[steam-roulette] spin failed:", err);
+      spinError = "Spin failed to send - try again.";
     } finally {
       spinningSend = false;
     }
@@ -274,6 +293,9 @@
       <Button size="sm" onclick={spin} disabled={spinningSend}>
         {spinningSend ? "Spinning..." : `Spin (${pool.length} in the pot)`}
       </Button>
+      {#if spinError}
+        <p class="text-xs text-destructive">{spinError}</p>
+      {/if}
     {:else if linkedMembers.filter((m) => m.done).length >= 2}
       <div class="text-xs text-destructive">No games in common. Tragic.</div>
     {/if}

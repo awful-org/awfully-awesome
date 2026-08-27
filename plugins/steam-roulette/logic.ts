@@ -62,6 +62,19 @@ export function commonGames(state: RouletteState): number[] {
   return [...common].sort((a, b) => a - b);
 }
 
+/**
+ * A spin update must fit the host's 4KB cap; ~400 appids (up to 8 chars
+ * each plus commas) leaves comfortable headroom. Even-spread sampling over
+ * the sorted pool: deterministic for a given pool, unbiased across the
+ * appid range (a plain slice would favor the oldest games).
+ */
+export const SPIN_POOL_CAP = 400;
+export function sampleSpinPool(pool: number[], cap = SPIN_POOL_CAP): number[] {
+  if (pool.length <= cap) return pool;
+  const step = pool.length / cap;
+  return Array.from({ length: cap }, (_, i) => pool[Math.floor(i * step)]);
+}
+
 export function hashSeed(seed: string): number {
   let hash = 0;
   for (let i = 0; i < seed.length; i++) {
