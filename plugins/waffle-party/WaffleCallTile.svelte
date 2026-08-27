@@ -58,13 +58,27 @@
   // Consume a parked card position only once when this renderer takes over.
   // Keeping peekHandoff() in the player prop would pin the iframe to the
   // parked timestamp and prevent later shared seek actions from reaching it.
-  const initialHandoff = takeHandoff();
-  let handoffPosition = $state<number | null>(initialHandoff?.position ?? null);
+  let handoffPosition = $state<number | null>(null);
+  let handoffConsumed = $state(false);
   let handoffVideo = $state<string | null>(current);
   $effect(() => {
     if (current === handoffVideo) return;
     handoffVideo = current;
     handoffPosition = null;
+  });
+  $effect(() => {
+    if (!joined || !current) {
+      handoffConsumed = false;
+      return;
+    }
+    if (handoffConsumed) return;
+    handoffConsumed = true;
+    // The card parks its position as tilePresence changes. Defer one microtask
+    // so that parked handoff is available when this tile takes over.
+    queueMicrotask(() => {
+      const handoff = takeHandoff();
+      if (handoff) handoffPosition = handoff.position;
+    });
   });
   $effect(() => {
     void readAudioPrefs(host.storage).then((value) => (volume = value));
