@@ -64,3 +64,16 @@ behavior-level mutation target exists without a Svelte component harness.
 - `plugins/waffle-party/tile-presence.test.ts:49` asserts published live time
   is returned to surfaces without a player.
 - Final targeted gate: 37 files / 301 tests passed; `pnpm check` passed.
+
+## Iteration 4: synchronized seek controls — PASS
+
+- WCR-12: `MusicCard.svelte` derives position and duration from the live
+  renderer publication while a call tile is present, and its seek input sends
+  the shared `seek` action; `WaffleCallTile.svelte` publishes position and
+  duration on every renderer update and uses the same shared seek action.
+- Renderer handoff uses the non-consuming live snapshot, so opening the call
+  tile does not reset the song timer; card play/pause samples the active player
+  at action time instead of a stale paused value.
+- `plugins/waffle-party/tile-presence.test.ts` covers live position and duration
+  publication for surfaces without a player.
+- Final gate: 37 files / 302 tests passed; `pnpm check` and `pnpm build` passed.
