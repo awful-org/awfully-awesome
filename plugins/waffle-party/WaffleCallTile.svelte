@@ -18,6 +18,7 @@
     publishLivePosition,
     registerPositionSource,
     parkHandoff,
+    takeHandoff,
   } from "./tile-presence.svelte";
   import { readAudioPrefs, writeAudioPrefs } from "./audio-prefs";
   import { cachedTitle, fetchTitle } from "./titles";
