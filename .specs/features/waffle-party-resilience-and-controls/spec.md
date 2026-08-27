@@ -9,10 +9,10 @@ from its card.
 
 ## Goals
 
-- [ ] Make party and stream controls predictable, icon-based, and accessible.
-- [ ] Persist each listener's Waffle Party volume locally.
-- [ ] Preserve party continuity through a five-second host-disconnect grace period.
-- [ ] Make party recreation, autoplay, and stream exit available where users expect them.
+- [x] Make party and stream controls predictable, icon-based, and accessible.
+- [x] Persist each listener's Waffle Party volume locally.
+- [x] Preserve party continuity through a five-second host-disconnect grace period.
+- [x] Make party recreation, autoplay, and stream exit available where users expect them.
 
 ## Out of Scope
 
@@ -173,35 +173,35 @@ from its card.
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| WAF-01 | Protected controls | Design | Pending |
-| WAF-02 | Protected controls | Design | Pending |
-| WAF-03 | Protected controls | Design | Pending |
-| WAF-04 | Audio preferences | T1 | Implementing |
-| WAF-05 | Audio preferences | T1 | Implementing |
-| WAF-06 | Audio preferences | T1 | Implementing |
-| WAF-07 | Audio preferences | T1 | Implementing |
-| WAF-08 | Named lifecycle | Design | Pending |
-| WAF-09 | Named lifecycle | Design | Pending |
-| WAF-10 | Named lifecycle | Design | Pending |
-| WAF-11 | Recreate party | Design | Pending |
-| WAF-12 | Recreate party | Design | Pending |
-| WAF-13 | Recreate party | Design | Pending |
-| WAF-14 | Recreate party | Design | Pending |
-| WAF-15 | Autoplay | Design | Pending |
-| WAF-16 | Autoplay | Design | Pending |
-| WAF-17 | Autoplay | Design | Pending |
-| WAF-18 | Join synchronization | Design | Pending |
-| WAF-19 | Join synchronization | Design | Pending |
-| WAF-20 | Join synchronization | Design | Pending |
-| WAF-21 | Stream exit | Design | Pending |
-| WAF-22 | Stream exit | Design | Pending |
-| WAF-23 | Stream exit | Design | Pending |
-| WAF-24 | Host tolerance | T2 | Implementing |
-| WAF-25 | Host tolerance | T2 | Implementing |
-| WAF-26 | Host tolerance | T2 | Implementing |
-| WAF-27 | Host tolerance | T2 | Implementing |
+| WAF-01 | Protected controls | T4 | Done |
+| WAF-02 | Protected controls | T4 | Done |
+| WAF-03 | Protected controls | T5–T7 | Done |
+| WAF-04 | Audio preferences | T1/T5/T6 | Done |
+| WAF-05 | Audio preferences | T1/T5/T6 | Done |
+| WAF-06 | Audio preferences | T1/T5/T6 | Done |
+| WAF-07 | Audio preferences | T1 | Done |
+| WAF-08 | Named lifecycle | T8 | Done |
+| WAF-09 | Named lifecycle | T8 | Done |
+| WAF-10 | Named lifecycle | T8 | Done |
+| WAF-11 | Recreate party | T5 | Done |
+| WAF-12 | Recreate party | T5 | Done |
+| WAF-13 | Recreate party | T5 | Done |
+| WAF-14 | Recreate party | T5 | Done |
+| WAF-15 | Autoplay | T3 | Done |
+| WAF-16 | Autoplay | T3/T4 | Done |
+| WAF-17 | Autoplay | T3/T4 | Done |
+| WAF-18 | Join synchronization | T3/T5/T6 | Done |
+| WAF-19 | Join synchronization | T3/T4/T6 | Done |
+| WAF-20 | Join synchronization | T3/T5/T6 | Done |
+| WAF-21 | Stream exit | T9 | Done |
+| WAF-22 | Stream exit | T9 | Done |
+| WAF-23 | Stream exit | T9 | Done |
+| WAF-24 | Host tolerance | T2/T5 | Done |
+| WAF-25 | Host tolerance | T2/T5 | Done |
+| WAF-26 | Host tolerance | T2/T5 | Done |
+| WAF-27 | Host tolerance | T2/T5 | Done |
 
-**Coverage:** 27 total, 0 mapped to tasks, 27 unmapped pending design.
+**Coverage:** 27 total, 27 mapped to completed tasks, 0 unmapped.
 
 ## Success Criteria
 

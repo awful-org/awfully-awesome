@@ -1,7 +1,7 @@
 # Waffle Party Resilience and Controls Tasks
 
 **Design**: `.specs/features/waffle-party-resilience-and-controls/design.md`
-**Status**: Draft
+**Status**: Done
 
 ## Test Coverage Matrix
 
@@ -94,6 +94,8 @@ T8 → T9 → T10
 
 ### T3: Extend shared party state for autoplay and responder sync
 
+**Status**: Done
+
 **What**: Seed newly created playable parties as playing, preserve autoplay across selected/advanced tracks, and authorize the calculated sync responder rather than only the host.
 **Where**: `plugins/waffle-party/logic.ts`
 **Depends on**: T2
@@ -134,6 +136,8 @@ T8 → T9 → T10
 
 ### T5: Upgrade card preferences, recreation, and lifecycle behavior
 
+**Status**: Done
+
 **What**: Wire audio preferences, icon controls, latest closed non-empty recreation, join sync, and host-departure grace into the chat card.
 **Where**: `plugins/waffle-party/MusicCard.svelte`
 **Depends on**: T1, T2, T3, T4
@@ -155,6 +159,8 @@ T8 → T9 → T10
 
 ### T6: Upgrade call-tile preferences and controls
 
+**Status**: Done
+
 **What**: Wire persisted local volume, icon controls, join synchronization, and player shielding into the Waffle call tile.
 **Where**: `plugins/waffle-party/WaffleCallTile.svelte`
 **Depends on**: T1, T3, T4, T5
@@ -174,6 +180,8 @@ T8 → T9 → T10
 
 ### T7: Convert widget playback buttons to matching icons
 
+**Status**: Done
+
 **What**: Ensure the compact Waffle Party widget uses the same accessible project icon treatment as the card and tile.
 **Where**: `plugins/waffle-party/WaffleWidget.svelte`
 **Depends on**: T5, T6
@@ -191,6 +199,8 @@ T8 → T9 → T10
 **Commit**: `style(waffle-party): align widget controls with call icons`
 
 ### T8: Resolve immediate update sender names from local profile state
+
+**Status**: Done
 
 **What**: Replace the literal teardown sender fallback with a non-empty cached local display name or deterministic identity label.
 **Where**: `awful.chat/frontend/src/lib/transport/transport.svelte.ts`
@@ -211,6 +221,8 @@ T8 → T9 → T10
 
 ### T9: Add the watched-transmission tile exit control
 
+**Status**: Done
+
 **What**: Render a red top-left Stop watching icon button on actively watched remote transmission cards and reuse the current stop-watch action.
 **Where**: `awful.chat/frontend/src/lib/components/VoiceVideoCallView.svelte`
 **Depends on**: T8
@@ -229,6 +241,8 @@ T8 → T9 → T10
 **Commit**: `feat(call): add watched stream exit control`
 
 ### T10: Update plugin documentation and run cross-repository UAT
+
+**Status**: Done
 
 **What**: Document local volume persistence, autoplay behavior, recreation, join synchronization, iframe constraints, and the five-second host grace; execute the full acceptance walkthrough.
 **Where**: `plugins/waffle-party/README.md`
