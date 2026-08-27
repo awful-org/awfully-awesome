@@ -27,6 +27,9 @@
   import {
     tilePresence,
     registerPositionSource,
+    livePosition,
+    parkHandoff,
+    peekHandoff,
     takeHandoff,
   } from "./tile-presence.svelte";
   import { cachedTitle, fetchTitle } from "./titles";
@@ -58,6 +61,12 @@
   const current = $derived(
     music.currentIndex === null ? null : music.queue[music.currentIndex]
   );
+  const rendererPosition = $derived.by(() => {
+    const handoff = peekHandoff();
+    return tilePresence.count > 0
+      ? livePosition(music.position)
+      : handoff?.position ?? localPosition;
+  });
   const joined = $derived(music.members.has(selfDid));
   const pendingPlaylist = $derived(music.playlistRequests[0] ?? null);
   const listeners = $derived(
@@ -78,7 +87,13 @@
   // playerless surfaces (the sidebar widget).
   $effect(() => {
     if (tilePresence.count > 0 || !joined) return;
-    return registerPositionSource(() => player?.currentTime() ?? localPosition);
+    const unregister = registerPositionSource(
+      () => player?.currentTime() ?? localPosition
+    );
+    return () => {
+      parkHandoff(player?.currentTime() ?? localPosition, music.playing);
+      unregister();
+    };
   });
 
   // Becoming the renderer after the call tile (leaving a call): the synced
@@ -90,6 +105,7 @@
     if (tilePresence.count > 0 || !joined || !current || music.closed) return;
     const h = takeHandoff();
     if (h && Math.abs(h.position - music.position) > 2) {
+      localPosition = h.position;
       void send({ action: "seek", position: Math.floor(h.position) });
     }
   });
@@ -125,7 +141,7 @@
     return selfDid === music.ownerDid ? null : { action: "leave" };
   }
   async function togglePlayback() {
-    const position = player?.currentTime() ?? localPosition;
+    const position = player?.currentTime() ?? rendererPosition;
     await send(
       { action: music.playing ? "pause" : "play", position },
       music.playing ? "Pausing…" : "Starting…"
@@ -191,7 +207,7 @@
     void send({
       action: "sync",
       index: music.currentIndex,
-      position: player?.currentTime() ?? localPosition,
+      position: player?.currentTime() ?? rendererPosition,
       playing: music.playing,
     });
   });
@@ -354,7 +370,7 @@
         videoId={current}
         playlistId={current ? null : pendingPlaylist}
         playing={current ? music.playing : false}
-        position={music.position}
+        position={peekHandoff()?.position ?? music.position}
         {volume}
         onPosition={(value) => (localPosition = value)}
         onDuration={(value) => (duration = value)}
@@ -397,13 +413,14 @@
         min="0"
         max={duration || 0}
         step="1"
-        bind:value={localPosition}
+        value={rendererPosition}
         disabled={duration <= 0}
-        onchange={() => send({ action: "seek", position: localPosition })}
+        onchange={() => send({ action: "seek", position: rendererPosition })}
+        oninput={(event) => (localPosition = Number(event.currentTarget.value))}
         aria-label="Seek video"
       />
       <div class="-mt-2 pb-1 text-right font-mono text-[11px] text-muted-foreground">
-        {formatTime(localPosition)} / {formatTime(duration)}
+        {formatTime(rendererPosition)} / {formatTime(duration)}
       </div>
       <div class="space-y-2 text-xs">
         <div class="flex items-center gap-2">

@@ -14,6 +14,8 @@
   import { syncResponder, type MusicState } from "./logic";
   import {
     tilePresence,
+    peekHandoff,
+    publishLivePosition,
     registerPositionSource,
     parkHandoff,
   } from "./tile-presence.svelte";
@@ -198,11 +200,12 @@
         bind:this={player}
         videoId={current}
         playing={music.playing}
-        position={music.position}
+        position={peekHandoff()?.position ?? music.position}
         {volume}
         controls={false}
         onPosition={(p) => {
           localPosition = p;
+          publishLivePosition(p, music.playing);
           if (!seeking) seekValue = p;
         }}
         onDuration={(d) => (duration = d)}

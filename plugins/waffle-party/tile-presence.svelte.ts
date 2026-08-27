@@ -5,6 +5,19 @@
  * both components live in this plugin's graph.
  */
 export const tilePresence = $state({ count: 0 });
+export const livePositionState = $state({
+  position: 0,
+  playing: false,
+  published: false,
+});
+
+export function publishLivePosition(position: number, playing: boolean): void {
+  if (Number.isFinite(position) && position >= 0) {
+    livePositionState.position = position;
+    livePositionState.playing = playing;
+    livePositionState.published = true;
+  }
+}
 
 /**
  * Whichever surface currently renders the player registers a live position
@@ -22,11 +35,14 @@ export function registerPositionSource(fn: () => number): () => void {
 }
 
 export function livePosition(fallback: number): number {
+  // Keep consumers reactive while the renderer publishes once per second.
+  livePositionState.position;
   try {
     const p = _positionSource?.();
-    return typeof p === "number" && Number.isFinite(p) ? p : fallback;
+    if (typeof p === "number" && Number.isFinite(p)) return p;
+    return livePositionState.published ? livePositionState.position : fallback;
   } catch {
-    return fallback;
+    return livePositionState.published ? livePositionState.position : fallback;
   }
 }
 
@@ -38,6 +54,13 @@ export function livePosition(fallback: number): number {
  */
 let _handoff: { position: number; playing: boolean; at: number } | null = null;
 
+export function peekHandoff(): { position: number; playing: boolean } | null {
+  const h = _handoff;
+  if (!h || Date.now() - h.at > 15_000) return null;
+  const elapsed = h.playing ? (Date.now() - h.at) / 1000 : 0;
+  return { position: h.position + elapsed, playing: h.playing };
+}
+
 export function parkHandoff(position: number, playing: boolean): void {
   if (Number.isFinite(position) && position > 0) {
     _handoff = { position, playing, at: Date.now() };
@@ -45,9 +68,7 @@ export function parkHandoff(position: number, playing: boolean): void {
 }
 
 export function takeHandoff(): { position: number; playing: boolean } | null {
-  const h = _handoff;
+  const h = peekHandoff();
   _handoff = null;
-  if (!h || Date.now() - h.at > 15_000) return null;
-  const elapsed = h.playing ? (Date.now() - h.at) / 1000 : 0;
-  return { position: h.position + elapsed, playing: h.playing };
+  return h;
 }

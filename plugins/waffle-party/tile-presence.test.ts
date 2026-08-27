@@ -10,6 +10,7 @@ vi.hoisted(() => {
 import {
   livePosition,
   parkHandoff,
+  publishLivePosition,
   registerPositionSource,
   takeHandoff,
 } from "./tile-presence.svelte";
@@ -41,6 +42,11 @@ describe("position source", () => {
     const unregister2 = registerPositionSource(() => NaN);
     expect(livePosition(7)).toBe(7);
     unregister2();
+  });
+
+  it("publishes the renderer time for surfaces without a player", () => {
+    publishLivePosition(142, true);
+    expect(livePosition(7)).toBe(142);
   });
 
   it("a stale unregister does not clear a newer source", () => {
