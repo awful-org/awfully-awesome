@@ -128,8 +128,14 @@
     playing ? player.playVideo() : player.pauseVideo();
   }
 
+  let reportedOnce = false;
   onMount(() => {
     const reporter = window.setInterval(() => {
+      // A paused party does not move: polling the iframe every second
+      // forever (two postMessage round-trips each) bought nothing after
+      // the first report, even for tiles parked paused for hours.
+      if (!playing && reportedOnce) return;
+      reportedOnce = true;
       onPosition?.(currentTime());
       onDuration?.(
         typeof player?.getDuration === "function" ? player.getDuration() : 0

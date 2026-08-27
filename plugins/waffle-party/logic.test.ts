@@ -71,6 +71,7 @@ describe("music reducer", () => {
       playing: false,
       position: 0,
       activity: [],
+      activitySeq: 0,
       loop: "off",
       closed: false,
       ownerDid: "",

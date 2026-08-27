@@ -118,11 +118,11 @@
     if (
       selfDid !== syncResponder(music) ||
       latest?.action !== "joined" ||
-      music.activity.length === syncedJoinCount ||
+      music.activitySeq === syncedJoinCount ||
       music.currentIndex === null
     )
       return;
-    syncedJoinCount = music.activity.length;
+    syncedJoinCount = music.activitySeq;
     void send({
       action: "sync",
       index: music.currentIndex,

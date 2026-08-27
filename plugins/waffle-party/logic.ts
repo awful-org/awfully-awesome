@@ -26,6 +26,10 @@ export interface MusicState {
   playing: boolean;
   position: number;
   activity: Activity[];
+  /** Total activity entries EVER, monotonic. The array itself is capped
+   *  (only the tail is rendered), so length cannot be used as a "something
+   *  happened" cursor - this can. */
+  activitySeq: number;
   loop: "off" | "track" | "queue";
   closed: boolean;
   ownerDid: string;
@@ -114,6 +118,7 @@ export function initialState(cardData: unknown): MusicState {
     playing: false,
     position: 0,
     activity: [],
+    activitySeq: 0,
     loop: "off",
     closed: false,
     ownerDid,
@@ -137,19 +142,22 @@ function validPosition(position: unknown): position is number {
   );
 }
 
+/** Only this many activity entries survive; 4 are ever rendered. Unbounded,
+ *  a week-old party's replay copied an ever-growing array per fold - O(n²)
+ *  over the party's whole life, paid on every cold rebuild. */
+const ACTIVITY_CAP = 16;
+
 function withActivity(
   state: MusicState,
   ctx: UpdateCtx,
   action: ActivityAction,
   videoId: string | null
 ): MusicState {
-  return {
-    ...state,
-    activity: [
-      ...state.activity,
-      { senderName: ctx.senderName, action, videoId },
-    ],
-  };
+  const activity = [
+    ...state.activity.slice(-(ACTIVITY_CAP - 1)),
+    { senderName: ctx.senderName, action, videoId },
+  ];
+  return { ...state, activity, activitySeq: state.activitySeq + 1 };
 }
 
 export function reduce(
