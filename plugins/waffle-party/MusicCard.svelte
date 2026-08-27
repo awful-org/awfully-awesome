@@ -307,18 +307,45 @@
   }
   onMount(() => {
     void readAudioPrefs(host.storage).then((value) => (volume = value));
-    const refreshRecreate = () => void host.cards().then((cards) => {
-      const mine = cards.filter((item) => item.senderDid === selfDid);
-      const hasActiveParty = cards.some((item) => {
-        const state = item.state as MusicState | undefined;
-        return item.id !== card.id && !!state && !state.closed && state.members.has(selfDid);
-      });
-      canRecreate =
-        music.closed &&
-        music.queue.length > 0 &&
-        mine.at(-1)?.id === card.id &&
-        !hasActiveParty;
-    });
+    let refreshInFlight = false;
+    let refreshQueued = false;
+    const refreshRecreate = () => {
+      if (!music.closed) {
+        canRecreate = false;
+        return;
+      }
+      if (refreshInFlight) {
+        refreshQueued = true;
+        return;
+      }
+      refreshInFlight = true;
+      void host
+        .cards()
+        .then((cards) => {
+          const mine = cards.filter((item) => item.senderDid === selfDid);
+          const hasActiveParty = cards.some((item) => {
+            const state = item.state as MusicState | undefined;
+            return (
+              item.id !== card.id &&
+              !!state &&
+              !state.closed &&
+              state.members.has(selfDid)
+            );
+          });
+          canRecreate =
+            music.closed &&
+            music.queue.length > 0 &&
+            mine.at(-1)?.id === card.id &&
+            !hasActiveParty;
+        })
+        .finally(() => {
+          refreshInFlight = false;
+          if (refreshQueued) {
+            refreshQueued = false;
+            refreshRecreate();
+          }
+        });
+    };
     refreshRecreate();
     const unsubscribeCardStates = host.onCardStateChange(refreshRecreate);
     const identityTimer = window.setInterval(() => {
