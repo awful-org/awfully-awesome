@@ -216,8 +216,11 @@ export function reduce(
             "closed",
             null
           );
-    case "host-left":
-      return !music.members.has(ctx.senderDid)
+    case "host-left": {
+      const observers = [...music.members.keys()].filter(
+        (did) => did !== music.ownerDid
+      );
+      return !music.members.has(ctx.senderDid) || observers[0] !== ctx.senderDid
         ? music
         : withActivity(
             { ...music, playing: false, closed: true },
@@ -225,6 +228,7 @@ export function reduce(
             "host left",
             null
           );
+    }
     case "join": {
       if (music.members.has(ctx.senderDid)) return music;
       const members = new Map(music.members);

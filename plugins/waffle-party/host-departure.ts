@@ -6,7 +6,10 @@ export function createHostDepartureGrace(
   hostDid: string,
   peers: () => PeerSnapshot[],
   close: () => void,
-  delay = 5_000
+  // Call setup can briefly tear down the relay peer before reconnecting.
+  // Keep the original five-second tolerance as the minimum, but allow the
+  // negotiation window to complete before declaring the host gone.
+  delay = 15_000
 ) {
   let timer: ReturnType<typeof setTimeout> | null = null;
 

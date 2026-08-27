@@ -5,7 +5,7 @@ describe("host departure grace", () => {
   it("closes once after five seconds when the host stays absent", () => {
     vi.useFakeTimers();
     const close = vi.fn();
-    const grace = createHostDepartureGrace("host", () => [], close);
+    const grace = createHostDepartureGrace("host", () => [], close, 5_000);
     grace.observeDisconnect("host");
     grace.observeDisconnect("host");
     vi.advanceTimersByTime(4_999);
