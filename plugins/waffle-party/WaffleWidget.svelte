@@ -74,6 +74,7 @@
       type="button"
       onclick={previous}
       aria-label="Previous track"
+      title="Previous track"
       class="shrink-0 cursor-pointer rounded bg-primary/15 p-1 text-primary hover:bg-primary/25"
     >
       <SkipBack class="size-3" />
@@ -88,6 +89,7 @@
           position: livePosition(music.position),
         })}
       aria-label={music.playing ? "Pause" : "Play"}
+      title={music.playing ? "Pause" : "Play"}
       class="shrink-0 cursor-pointer rounded bg-primary/15 p-1 text-primary hover:bg-primary/25"
     >
       {#if music.playing}<Pause class="size-3" />{:else}<Play
@@ -98,6 +100,7 @@
       type="button"
       onclick={() => send({ action: "skip" })}
       aria-label="Next track"
+      title="Next track"
       class="shrink-0 cursor-pointer rounded bg-primary/15 p-1 text-primary hover:bg-primary/25"
     >
       <SkipForward class="size-3" />
