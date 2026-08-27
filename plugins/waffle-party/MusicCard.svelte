@@ -141,7 +141,9 @@
     return selfDid === music.ownerDid ? null : { action: "leave" };
   }
   async function togglePlayback() {
-    const position = player?.currentTime() ?? rendererPosition;
+    const position =
+      player?.currentTime() ??
+      (tilePresence.count > 0 ? livePosition(music.position) : rendererPosition);
     await send(
       { action: music.playing ? "pause" : "play", position },
       music.playing ? "Pausing…" : "Starting…"
@@ -207,7 +209,9 @@
     void send({
       action: "sync",
       index: music.currentIndex,
-      position: player?.currentTime() ?? rendererPosition,
+      position:
+        player?.currentTime() ??
+        (tilePresence.count > 0 ? livePosition(music.position) : rendererPosition),
       playing: music.playing,
     });
   });
