@@ -184,7 +184,7 @@ describe("music reducer", () => {
     expect(state.playing).toBe(false);
   });
 
-  it("skips to the next track and stops after the final track", () => {
+  it("skips to the next track and stops after the final track when looping is off", () => {
     const queued = {
       ...initialState({ videoId: first }),
       queue: [first, second],
@@ -197,6 +197,47 @@ describe("music reducer", () => {
     const ended = update(next, { action: "skip" });
     expect(ended.currentIndex).toBeNull();
     expect(ended.playing).toBe(false);
+  });
+
+  it("restarts or wraps the final track when the selected loop mode requires it", () => {
+    const last = {
+      ...initialState({ videoId: first }),
+      queue: [first, second],
+      currentIndex: 1,
+      playing: true,
+      position: 42,
+    };
+    const trackLoop = update({ ...last, loop: "track" }, { action: "skip" });
+    expect(trackLoop.currentIndex).toBe(1);
+    expect(trackLoop.position).toBe(0);
+    expect(trackLoop.playing).toBe(true);
+
+    const queueLoop = update({ ...last, loop: "queue" }, { action: "skip" });
+    expect(queueLoop.currentIndex).toBe(0);
+    expect(queueLoop.position).toBe(0);
+    expect(queueLoop.playing).toBe(true);
+  });
+
+  it("goes to the previous track and respects queue and track looping", () => {
+    const secondTrack = {
+      ...initialState({ videoId: first }),
+      queue: [first, second],
+      currentIndex: 1,
+      playing: true,
+      position: 42,
+    };
+    const previous = update(secondTrack, { action: "previous" });
+    expect(previous.currentIndex).toBe(0);
+    expect(previous.position).toBe(0);
+
+    const firstTrack = { ...secondTrack, currentIndex: 0 };
+    const queueLoop = update({ ...firstTrack, loop: "queue" }, { action: "previous" });
+    expect(queueLoop.currentIndex).toBe(1);
+    expect(queueLoop.position).toBe(0);
+
+    const trackLoop = update({ ...firstTrack, loop: "track" }, { action: "previous" });
+    expect(trackLoop.currentIndex).toBe(0);
+    expect(trackLoop.position).toBe(0);
   });
 
   it("persists valid playback intent and rejects invalid positions", () => {

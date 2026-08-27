@@ -5,6 +5,7 @@ export type ActivityAction =
   | "added a playlist"
   | "removed"
   | "skipped"
+  | "went to the previous track"
   | "played"
   | "paused"
   | "seeked"
@@ -173,6 +174,28 @@ function withActivity(
   return { ...state, activity, activitySeq: state.activitySeq + 1 };
 }
 
+function nextTrack(music: MusicState): MusicState {
+  if (music.currentIndex === null) return music;
+  if (music.loop === "track") return { ...music, position: 0 };
+  const next = music.currentIndex + 1;
+  if (next < music.queue.length)
+    return { ...music, currentIndex: next, position: 0 };
+  return music.loop === "queue" && music.queue.length
+    ? { ...music, currentIndex: 0, position: 0 }
+    : { ...music, currentIndex: null, playing: false, position: 0 };
+}
+
+function previousTrack(music: MusicState): MusicState {
+  if (music.currentIndex === null) return music;
+  if (music.loop === "track") return { ...music, position: 0 };
+  const previous = music.currentIndex - 1;
+  if (previous >= 0)
+    return { ...music, currentIndex: previous, position: 0 };
+  return music.loop === "queue" && music.queue.length
+    ? { ...music, currentIndex: music.queue.length - 1, position: 0 }
+    : { ...music, position: 0 };
+}
+
 export function reduce(
   state: unknown,
   update: { data: unknown },
@@ -311,13 +334,7 @@ export function reduce(
     case "ended": {
       if (data.index !== music.currentIndex || music.currentIndex === null)
         return music;
-      if (music.loop === "track") return { ...music, position: 0 };
-      const next = music.currentIndex + 1;
-      if (next < music.queue.length)
-        return { ...music, currentIndex: next, position: 0 };
-      return music.loop === "queue" && music.queue.length
-        ? { ...music, currentIndex: 0, position: 0 }
-        : { ...music, currentIndex: null, playing: false, position: 0 };
+      return nextTrack(music);
     }
     case "add": {
       if (!validVideoId(data.videoId)) return music;
@@ -355,13 +372,15 @@ export function reduce(
     case "skip": {
       if (music.currentIndex === null) return music;
       const videoId = music.queue[music.currentIndex] ?? null;
-      const currentIndex = music.currentIndex + 1;
+      return withActivity(nextTrack(music), ctx, "skipped", videoId);
+    }
+    case "previous": {
+      if (music.currentIndex === null) return music;
+      const videoId = music.queue[music.currentIndex] ?? null;
       return withActivity(
-        currentIndex < music.queue.length
-          ? { ...music, currentIndex, position: 0 }
-          : { ...music, currentIndex: null, playing: false, position: 0 },
+        previousTrack(music),
         ctx,
-        "skipped",
+        "went to the previous track",
         videoId
       );
     }
