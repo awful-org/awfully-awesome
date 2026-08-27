@@ -18,6 +18,7 @@
     registerPositionSource,
     parkHandoff,
   } from "./tile-presence.svelte";
+  import { readAudioPrefs, writeAudioPrefs } from "./audio-prefs";
   import { cachedTitle, fetchTitle } from "./titles";
 
   interface Props {
@@ -53,6 +54,13 @@
   let duration = $state(0);
   let seeking = $state(false);
   let seekValue = $state(0);
+  $effect(() => {
+    void readAudioPrefs(host.storage).then((value) => (volume = value));
+  });
+  function setVolume(value: number) {
+    volume = value;
+    void writeAudioPrefs(host.storage, value);
+  }
 
   // While this tile exists, it IS the party's renderer: the chat card
   // mounts no player, shows "Rendering in the call", and skips its
@@ -309,6 +317,7 @@
             min="0"
             max="100"
             bind:value={volume}
+            oninput={(event) => setVolume(Number(event.currentTarget.value))}
             aria-label="Volume (only you)"
             class="h-1 w-20 cursor-pointer accent-white"
           />
