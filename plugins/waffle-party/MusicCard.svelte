@@ -402,7 +402,7 @@
         onchange={() => send({ action: "seek", position: localPosition })}
         aria-label="Seek video"
       />
-      <div class="-mt-1 text-right font-mono text-[11px] text-muted-foreground">
+      <div class="-mt-2 pb-1 text-right font-mono text-[11px] text-muted-foreground">
         {formatTime(localPosition)} / {formatTime(duration)}
       </div>
       <div class="space-y-2 text-xs">
