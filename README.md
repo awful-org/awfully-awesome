@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.svg" alt="awfully-awesome" width="140">
+</p>
+
 # awfully-awesome
 
 Plugins for [awful.chat](https://github.com/awful-org/awful.chat). Point your
@@ -14,7 +18,7 @@ Pin a ref for reproducible deploys: `awful-org/awfully-awesome#<tag-or-sha>`.
 | Plugin | Command | What it does |
 | --- | --- | --- |
 | steam-roulette | `/steam` | Everyone links their Steam library, the card intersects them, and one spin picks a game you all own. Instance env: `PLUGIN_PROXY_HOSTS=api.steampowered.com,store.steampowered.com` and `PLUGIN_PROXY_SECRETS=STEAM@api.steampowered.com=<api key>` ([get one](https://steamcommunity.com/dev/apikey)). |
-| waffle-party | `/play` | Start a room-wide YouTube listening party from a video or playlist URL. Members can join, share queue and playback controls, and add or remove tracks. Playlists resolve in two-track batches with no API key. |
+| waffle-party | `/play` | Start a room-wide YouTube listening party from a video or playlist URL. Members join in one click from the chat card or the party's call tile, share queue and playback controls, and add or remove tracks. Playlists resolve in two-track batches with no API key. |
 
 ## Writing a plugin
 
