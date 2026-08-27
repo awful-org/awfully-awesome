@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import {
+    Ban,
     CircleOff,
     List,
     LogIn,
@@ -8,7 +9,6 @@
     Pause,
     Play,
     Plus,
-    RefreshCw,
     Repeat,
     Repeat1,
     SkipBack,
@@ -138,6 +138,12 @@
     const mode =
       music.loop === "off" ? "track" : music.loop === "track" ? "queue" : "off";
     await send({ action: "loop", mode });
+  }
+  function formatTime(seconds: number): string {
+    if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+    const minutes = Math.floor(seconds / 60);
+    const remainder = Math.floor(seconds % 60);
+    return `${minutes}:${remainder.toString().padStart(2, "0")}`;
   }
   async function ended() {
     if (music.currentIndex !== null)
@@ -327,11 +333,11 @@
       The party is over.. heh..~
     </p>{#if canRecreate}<button
         type="button"
-        class="mx-auto rounded border border-primary p-2 text-primary"
+        class="mx-auto block rounded bg-muted/70 px-3 py-2 text-xs text-foreground hover:bg-muted"
         onclick={recreate}
         aria-label="Recruwuate party :3"
         title="Recruwuate party :3"
-      ><RefreshCw class="size-3.5" /> Recruwuate party :3</button
+      >Recruwuate party :3</button
     >{/if}{:else if joined && (current || pendingPlaylist)}<div class="space-y-1">
       {#if tilePresence.count > 0}
         <!-- ONE renderer at a time: while the call tile plays the party,
@@ -396,44 +402,33 @@
         onchange={() => send({ action: "seek", position: localPosition })}
         aria-label="Seek video"
       />
+      <div class="text-right font-mono text-[11px] text-muted-foreground">
+        {formatTime(localPosition)} / {formatTime(duration)}
+      </div>
       <div class="flex flex-wrap gap-2 text-xs">
-        <button
-          class="rounded bg-primary px-3 py-2 text-primary-foreground disabled:opacity-60"
-          disabled={pending !== null}
-          onclick={togglePlayback} aria-label={music.playing ? "Pause" : "Play"} title={music.playing ? "Pause" : "Play"}>{#if music.playing}<Pause class="size-4" />{:else}<Play class="size-4" />{/if}</button
-        >
-        <button
-          class="rounded border border-border px-3 py-2 disabled:opacity-60"
-          disabled={pending !== null}
-          onclick={previous}
-          aria-label="Previous track" title="Previous track"><SkipBack class="size-4" /></button
-        >
-        <button
-          class="rounded border border-border px-3 py-2 disabled:opacity-60"
-          disabled={pending !== null}
-          onclick={() => send({ action: "skip" }, "Skipping…")} aria-label="Skip" title="Skip"><SkipForward class="size-4" /></button
-        >
-        <button
-          class="rounded border border-border px-3 py-2"
-          onclick={() => (queueOpen = !queueOpen)}
-          aria-label={queueOpen ? "Hide queue" : "Show queue"} title={queueOpen ? "Hide queue" : "Show queue"}><List class="size-4" /></button
-        >
-        {#if selfDid === music.ownerDid}<button
-            class="rounded border border-destructive px-3 py-2 text-destructive disabled:opacity-60"
+        <div class="flex flex-wrap gap-2">
+          <button
+            class="rounded bg-primary px-3 py-2 text-primary-foreground disabled:opacity-60"
             disabled={pending !== null}
-            onclick={() => send({ action: "close" }, "Disbanding party…")}
-            aria-label="Disband party"
-            title="Disband party"
-            ><CircleOff class="size-4" /></button
-          >{/if}
-        <button
-          class="flex items-center gap-1 rounded border border-border px-3 py-2 disabled:opacity-60"
-          disabled={pending !== null}
-          onclick={cycleLoop}
-          aria-label={`Loop mode: ${music.loop}`}
-          title={`Loop mode: ${music.loop}. Click to change.`}
-        >{#if music.loop === "track"}<Repeat1 class="size-4" />{:else}<Repeat class="size-4 {music.loop === "off" ? "opacity-50" : ""}" />{/if} {music.loop}</button>
-        >
+            onclick={togglePlayback} aria-label={music.playing ? "Pause" : "Play"} title={music.playing ? "Pause" : "Play"}>{#if music.playing}<Pause class="size-4" />{:else}<Play class="size-4" />{/if}</button
+          >
+          <button
+            class="rounded border border-border px-3 py-2 disabled:opacity-60"
+            disabled={pending !== null}
+            onclick={previous}
+            aria-label="Previous track" title="Previous track"><SkipBack class="size-4" /></button
+          >
+          <button
+            class="rounded border border-border px-3 py-2 disabled:opacity-60"
+            disabled={pending !== null}
+            onclick={() => send({ action: "skip" }, "Skipping…")} aria-label="Skip" title="Skip"><SkipForward class="size-4" /></button
+          >
+          <button
+            class="rounded border border-border px-3 py-2"
+            onclick={() => (queueOpen = !queueOpen)}
+            aria-label={queueOpen ? "Hide queue" : "Show queue"} title={queueOpen ? "Hide queue" : "Show queue"}><List class="size-4" /></button
+          >
+        </div>
         <label class="flex items-center gap-1"
           >Vol <input
             type="range"
@@ -443,6 +438,30 @@
             onchange={(event) => setVolume(Number(event.currentTarget.value))}
           /></label
         >
+        <div class="ml-auto flex gap-2">
+          <button
+            class="rounded border border-border px-3 py-2 disabled:opacity-60"
+            disabled={pending !== null}
+            onclick={cycleLoop}
+            aria-label={`Loop mode: ${music.loop}`}
+            title={`Loop mode: ${music.loop}. Click to change.`}
+          >{#if music.loop === "off"}<Ban class="size-4" />{:else if music.loop === "track"}<Repeat1 class="size-4" />{:else}<Repeat class="size-4" />{/if}</button>
+          {#if selfDid === music.ownerDid}<button
+              class="rounded border border-destructive px-3 py-2 text-destructive disabled:opacity-60"
+              disabled={pending !== null}
+              onclick={() => send({ action: "close" }, "Disbanding party…")}
+              aria-label="Disband party"
+              title="Disband party"
+              ><CircleOff class="size-4" /></button
+            >{:else}<button
+              class="rounded border border-border px-3 py-2 disabled:opacity-60"
+              disabled={pending !== null}
+              onclick={() => send({ action: "leave" }, "Leaving party…")}
+              aria-label="Leave party"
+              title="Leave party"
+              ><LogOut class="size-4" /></button
+            >{/if}
+        </div>
       </div>
     </div>
     {#if queueOpen}
@@ -492,13 +511,6 @@
       aria-label="Join party"
       title="Join party"
       ><LogIn class="size-4" /></button
-    >{:else if !music.closed && joined && selfDid !== music.ownerDid}<button
-      class="rounded border border-border px-3 py-2 text-xs disabled:opacity-60"
-      disabled={pending !== null}
-      onclick={() => send({ action: "leave" }, "Leaving party…")}
-      aria-label="Leave party"
-      title="Leave party"
-      ><LogOut class="size-4" /></button
     >{/if}
   <div
     class="grid {music.closed
