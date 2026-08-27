@@ -73,6 +73,8 @@ T8 → T9 → T10
 
 ### T2: Add cancellable host-departure grace helper
 
+**Status**: Done
+
 **What**: Create a single-timer helper that closes after five seconds only if the host DID stays absent, and cancels on reappearance.
 **Where**: `plugins/waffle-party/host-departure.ts`
 **Depends on**: T1

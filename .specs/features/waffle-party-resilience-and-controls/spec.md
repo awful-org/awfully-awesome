@@ -196,10 +196,10 @@ from its card.
 | WAF-21 | Stream exit | Design | Pending |
 | WAF-22 | Stream exit | Design | Pending |
 | WAF-23 | Stream exit | Design | Pending |
-| WAF-24 | Host tolerance | Design | Pending |
-| WAF-25 | Host tolerance | Design | Pending |
-| WAF-26 | Host tolerance | Design | Pending |
-| WAF-27 | Host tolerance | Design | Pending |
+| WAF-24 | Host tolerance | T2 | Implementing |
+| WAF-25 | Host tolerance | T2 | Implementing |
+| WAF-26 | Host tolerance | T2 | Implementing |
+| WAF-27 | Host tolerance | T2 | Implementing |
 
 **Coverage:** 27 total, 0 mapped to tasks, 27 unmapped pending design.
 
