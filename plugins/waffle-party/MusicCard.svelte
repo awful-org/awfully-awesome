@@ -1,6 +1,19 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { List, Pause, Play, RefreshCw, RotateCcw, RotateCw, SkipForward, Trash2 } from "@lucide/svelte";
+  import {
+    CircleOff,
+    List,
+    LogIn,
+    LogOut,
+    Pause,
+    Play,
+    Plus,
+    RefreshCw,
+    RotateCcw,
+    RotateCw,
+    SkipForward,
+    Trash2,
+  } from "@lucide/svelte";
   import type { HostApi } from "$lib/plugins/api";
   import type { Message } from "$lib/transport/transport.svelte";
   import WafflePlayer from "./WafflePlayer.svelte";
@@ -252,6 +265,9 @@
       if (action) host.sendUpdateImmediately(card.id, action);
     });
     const pruneTimer = window.setInterval(() => {
+      // Every member observes peer snapshots so a host reconnect cancels
+      // its locally pending close, not only the party owner’s copy.
+      hostDeparture.observePeers();
       if (
         Date.now() - mountedAt < 15_000 ||
         music.closed ||
@@ -262,7 +278,6 @@
         selfDid,
         ...host.peers().map((peer) => peer.did),
       ]);
-      hostDeparture.observePeers();
       for (const did of music.members.keys()) {
         if (did !== music.ownerDid && !connected.has(did))
           void send({ action: "prune", did });
@@ -293,10 +308,11 @@
       The party is over.. heh..~
     </p>{#if canRecreate}<button
         type="button"
-        class="mx-auto flex items-center gap-1 rounded border border-primary px-3 py-2 text-xs text-primary"
+        class="mx-auto rounded border border-primary p-2 text-primary"
         onclick={recreate}
         aria-label="Recreate party"
-      ><RefreshCw class="size-3.5" /> Recreate party</button
+        title="Recreate party"
+      ><RefreshCw class="size-3.5" /></button
     >{/if}{:else if joined && (current || pendingPlaylist)}<div class="space-y-1">
       {#if tilePresence.count > 0}
         <!-- ONE renderer at a time: while the call tile plays the party,
@@ -370,7 +386,7 @@
         <button
           class="rounded bg-primary px-3 py-2 text-primary-foreground disabled:opacity-60"
           disabled={pending !== null}
-          onclick={togglePlayback} aria-label={music.playing ? "Pause" : "Play"}>{#if music.playing}<Pause class="size-4" />{:else}<Play class="size-4" />{/if}</button
+          onclick={togglePlayback} aria-label={music.playing ? "Pause" : "Play"} title={music.playing ? "Pause" : "Play"}>{#if music.playing}<Pause class="size-4" />{:else}<Play class="size-4" />{/if}</button
         >
         <button
           class="rounded border border-border px-3 py-2 disabled:opacity-60"
@@ -379,31 +395,33 @@
             send(
               { action: "seek", position: Math.max(0, localPosition - 10) },
               "Seeking…"
-            )} aria-label="Back 10 seconds"><RotateCcw class="size-4" /></button
+            )} aria-label="Back 10 seconds" title="Back 10 seconds"><RotateCcw class="size-4" /></button
         >
         <button
           class="rounded border border-border px-3 py-2 disabled:opacity-60"
           disabled={pending !== null}
           onclick={() =>
             send({ action: "seek", position: localPosition + 10 }, "Seeking…")}
-          aria-label="Forward 10 seconds"><RotateCw class="size-4" /></button
+          aria-label="Forward 10 seconds" title="Forward 10 seconds"><RotateCw class="size-4" /></button
         >
         <button
           class="rounded border border-border px-3 py-2 disabled:opacity-60"
           disabled={pending !== null}
-          onclick={() => send({ action: "skip" }, "Skipping…")} aria-label="Skip"><SkipForward class="size-4" /></button
+          onclick={() => send({ action: "skip" }, "Skipping…")} aria-label="Skip" title="Skip"><SkipForward class="size-4" /></button
         >
         {/if}
         <button
           class="rounded border border-border px-3 py-2"
           onclick={() => (queueOpen = !queueOpen)}
-          aria-label={queueOpen ? "Hide queue" : "Show queue"}><List class="size-4" /></button
+          aria-label={queueOpen ? "Hide queue" : "Show queue"} title={queueOpen ? "Hide queue" : "Show queue"}><List class="size-4" /></button
         >
         {#if selfDid === music.ownerDid}<button
             class="rounded border border-destructive px-3 py-2 text-destructive disabled:opacity-60"
             disabled={pending !== null}
             onclick={() => send({ action: "close" }, "Disbanding party…")}
-            >Disband party</button
+            aria-label="Disband party"
+            title="Disband party"
+            ><CircleOff class="size-4" /></button
           >{/if}
         <select
           class="rounded border border-border bg-background px-2"
@@ -441,7 +459,9 @@
           /><button
             class="rounded border border-border px-2 text-xs disabled:opacity-60"
             disabled={pending !== null}
-            onclick={add}>Add</button
+            onclick={add}
+            aria-label="Add to queue"
+            title="Add to queue"><Plus class="size-4" /></button
           >
         </div>
         {#if error}<p class="text-xs text-destructive">{error}</p>{/if}
@@ -463,7 +483,7 @@
                 disabled={pending !== null}
                 onclick={() =>
                   send({ action: "remove", index }, "Removing track…")}
-                aria-label="Remove track"><Trash2 class="size-4" /></button
+                aria-label="Remove track" title="Remove track"><Trash2 class="size-4" /></button
               >
             </div>{/each}
         </div>
@@ -472,12 +492,16 @@
       class="rounded bg-primary px-3 py-2 text-xs text-primary-foreground disabled:opacity-60"
       disabled={pending !== null}
       onclick={join}
-      >{pending === "Joining party…" ? "Joining…" : "Join party"}</button
+      aria-label="Join party"
+      title="Join party"
+      ><LogIn class="size-4" /></button
     >{:else if !music.closed && joined && selfDid !== music.ownerDid}<button
       class="rounded border border-border px-3 py-2 text-xs disabled:opacity-60"
       disabled={pending !== null}
       onclick={() => send({ action: "leave" }, "Leaving party…")}
-      >Leave party</button
+      aria-label="Leave party"
+      title="Leave party"
+      ><LogOut class="size-4" /></button
     >{/if}
   <div
     class="grid {music.closed
