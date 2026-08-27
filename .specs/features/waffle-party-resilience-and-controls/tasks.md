@@ -113,6 +113,8 @@ T8 → T9 → T10
 
 ### T4: Shield the embedded player and request autoplay
 
+**Status**: Done
+
 **What**: Add the inert iframe pointer shield and verify player synchronization requests playback after loading a selected video at its supplied position.
 **Where**: `plugins/waffle-party/WafflePlayer.svelte`
 **Depends on**: T3

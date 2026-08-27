@@ -217,11 +217,14 @@
   class:pointer-events-none={hidden}
   class:opacity-0={hidden}
   class:-z-50={hidden}
-  class="space-y-2"
+  class="relative space-y-2"
 >
   <div
     bind:this={mount}
     class="min-w-[200px] min-h-[200px] overflow-hidden rounded-md border border-border bg-black"
   ></div>
+  <!-- YouTube controls are local-only. This inert shield consumes pointer
+       input while Waffle Party's own controls render above the component. -->
+  <div class="absolute inset-0 z-10" aria-hidden="true"></div>
   {#if error}<p class="text-xs text-destructive">{error}</p>{/if}
 </div>
