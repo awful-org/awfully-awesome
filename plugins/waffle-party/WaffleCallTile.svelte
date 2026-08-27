@@ -5,8 +5,6 @@
     Pause,
     SkipBack,
     SkipForward,
-    RotateCcw,
-    RotateCw,
     LogIn,
     Volume2,
   } from "@lucide/svelte";
@@ -157,15 +155,8 @@
     await send({ action: "skip" });
   }
 
-  /** Standard player back button: mid-track restarts the song, near the
-   *  start jumps to the previous one (via the reducer's select action). */
   async function previous() {
-    const pos = player?.currentTime() ?? seekValue;
-    if (pos > 3 || music.currentIndex === null || music.currentIndex === 0) {
-      await seekTo(0);
-    } else {
-      await send({ action: "select", index: music.currentIndex - 1 });
-    }
+    await send({ action: "previous" });
   }
 
   async function seekTo(position: number) {
@@ -270,16 +261,6 @@
       <div class="flex items-center gap-1.5">
         <button
           type="button"
-          onclick={() =>
-            seekTo(Math.max(0, (player?.currentTime() ?? seekValue) - 10))}
-          aria-label="Back 10 seconds"
-          title="Back 10 seconds"
-          class="cursor-pointer rounded bg-white/10 p-1.5 text-white hover:bg-white/20"
-        >
-          <RotateCcw class="size-3.5" />
-        </button>
-        <button
-          type="button"
           onclick={previous}
           aria-label="Previous track"
           title="Previous track"
@@ -306,15 +287,6 @@
           class="cursor-pointer rounded bg-white/10 p-1.5 text-white hover:bg-white/20"
         >
           <SkipForward class="size-3.5" />
-        </button>
-        <button
-          type="button"
-          onclick={() => seekTo((player?.currentTime() ?? seekValue) + 10)}
-          aria-label="Forward 10 seconds"
-          title="Forward 10 seconds"
-          class="cursor-pointer rounded bg-white/10 p-1.5 text-white hover:bg-white/20"
-        >
-          <RotateCw class="size-3.5" />
         </button>
         <span class="font-mono text-[10px] text-white/70">
           {fmt(seekValue)} / {fmt(duration)}

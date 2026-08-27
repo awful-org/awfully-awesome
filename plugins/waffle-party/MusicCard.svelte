@@ -9,8 +9,9 @@
     Play,
     Plus,
     RefreshCw,
-    RotateCcw,
-    RotateCw,
+    Repeat,
+    Repeat1,
+    SkipBack,
     SkipForward,
     Trash2,
   } from "@lucide/svelte";
@@ -130,6 +131,14 @@
       music.playing ? "Pausing…" : "Starting…"
     );
   }
+  async function previous() {
+    await send({ action: "previous" }, "Going to previous track…");
+  }
+  async function cycleLoop() {
+    const mode =
+      music.loop === "off" ? "track" : music.loop === "track" ? "queue" : "off";
+    await send({ action: "loop", mode });
+  }
   async function ended() {
     if (music.currentIndex !== null)
       await send({ action: "ended", index: music.currentIndex });
@@ -241,11 +250,20 @@
   }
   onMount(() => {
     void readAudioPrefs(host.storage).then((value) => (volume = value));
-    void host.cards().then((cards) => {
+    const refreshRecreate = () => void host.cards().then((cards) => {
       const mine = cards.filter((item) => item.senderDid === selfDid);
+      const hasActiveParty = cards.some((item) => {
+        const state = item.state as MusicState | undefined;
+        return item.id !== card.id && !!state && !state.closed && state.members.has(selfDid);
+      });
       canRecreate =
-        music.closed && music.queue.length > 0 && mine.at(-1)?.id === card.id;
+        music.closed &&
+        music.queue.length > 0 &&
+        mine.at(-1)?.id === card.id &&
+        !hasActiveParty;
     });
+    refreshRecreate();
+    const unsubscribeCardStates = host.onCardStateChange(refreshRecreate);
     const identityTimer = window.setInterval(() => {
       selfDid = host.selfDid();
     }, 250);
@@ -289,6 +307,7 @@
       hostDeparture.dispose();
       unsubscribe();
       unsubscribeBeforeDisconnect();
+      unsubscribeCardStates();
       const action = departureAction();
       if (action) void send(action);
     };
@@ -310,9 +329,9 @@
         type="button"
         class="mx-auto rounded border border-primary p-2 text-primary"
         onclick={recreate}
-        aria-label="Recreate party"
-        title="Recreate party"
-      ><RefreshCw class="size-3.5" /></button
+        aria-label="Recruwuate party :3"
+        title="Recruwuate party :3"
+      ><RefreshCw class="size-3.5" /> Recruwuate party :3</button
     >{/if}{:else if joined && (current || pendingPlaylist)}<div class="space-y-1">
       {#if tilePresence.count > 0}
         <!-- ONE renderer at a time: while the call tile plays the party,
@@ -366,9 +385,6 @@
       Reading playlist…
     </p>{/if}
   {#if !music.closed && joined}<div class="space-y-2">
-      <!-- Playback control lives on whichever surface RENDERS: while the
-           call tile plays, the card keeps only queue management. -->
-      {#if tilePresence.count === 0}
       <input
         class="w-full"
         type="range"
@@ -380,9 +396,7 @@
         onchange={() => send({ action: "seek", position: localPosition })}
         aria-label="Seek video"
       />
-      {/if}
       <div class="flex flex-wrap gap-2 text-xs">
-        {#if tilePresence.count === 0}
         <button
           class="rounded bg-primary px-3 py-2 text-primary-foreground disabled:opacity-60"
           disabled={pending !== null}
@@ -391,25 +405,14 @@
         <button
           class="rounded border border-border px-3 py-2 disabled:opacity-60"
           disabled={pending !== null}
-          onclick={() =>
-            send(
-              { action: "seek", position: Math.max(0, localPosition - 10) },
-              "Seeking…"
-            )} aria-label="Back 10 seconds" title="Back 10 seconds"><RotateCcw class="size-4" /></button
-        >
-        <button
-          class="rounded border border-border px-3 py-2 disabled:opacity-60"
-          disabled={pending !== null}
-          onclick={() =>
-            send({ action: "seek", position: localPosition + 10 }, "Seeking…")}
-          aria-label="Forward 10 seconds" title="Forward 10 seconds"><RotateCw class="size-4" /></button
+          onclick={previous}
+          aria-label="Previous track" title="Previous track"><SkipBack class="size-4" /></button
         >
         <button
           class="rounded border border-border px-3 py-2 disabled:opacity-60"
           disabled={pending !== null}
           onclick={() => send({ action: "skip" }, "Skipping…")} aria-label="Skip" title="Skip"><SkipForward class="size-4" /></button
         >
-        {/if}
         <button
           class="rounded border border-border px-3 py-2"
           onclick={() => (queueOpen = !queueOpen)}
@@ -423,19 +426,14 @@
             title="Disband party"
             ><CircleOff class="size-4" /></button
           >{/if}
-        <select
-          class="rounded border border-border bg-background px-2"
-          value={music.loop}
-          onchange={(event) =>
-            send({
-              action: "loop",
-              mode: (event.currentTarget as HTMLSelectElement).value,
-            })}
-          ><option value="off">No loop</option><option value="track"
-            >Loop video</option
-          ><option value="queue">Loop queue</option></select
+        <button
+          class="flex items-center gap-1 rounded border border-border px-3 py-2 disabled:opacity-60"
+          disabled={pending !== null}
+          onclick={cycleLoop}
+          aria-label={`Loop mode: ${music.loop}`}
+          title={`Loop mode: ${music.loop}. Click to change.`}
+        >{#if music.loop === "track"}<Repeat1 class="size-4" />{:else}<Repeat class="size-4 {music.loop === "off" ? "opacity-50" : ""}" />{/if} {music.loop}</button>
         >
-        {#if tilePresence.count === 0}
         <label class="flex items-center gap-1"
           >Vol <input
             type="range"
@@ -445,7 +443,6 @@
             onchange={(event) => setVolume(Number(event.currentTarget.value))}
           /></label
         >
-        {/if}
       </div>
     </div>
     {#if queueOpen}
