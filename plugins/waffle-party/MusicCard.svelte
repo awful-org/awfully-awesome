@@ -93,6 +93,49 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   const mountedAt = Date.now();
   let departureSent = false;
   let canRecreate = $state(false);
+  let refreshInFlight = false;
+  let refreshQueued = false;
+  let wasClosed = false;
+  let hasRefreshed = false;
+  const refreshRecreate = () => {
+    if (!music.closed) {
+      canRecreate = false;
+      return;
+    }
+    if (refreshInFlight) {
+      refreshQueued = true;
+      return;
+    }
+    refreshInFlight = true;
+    const force = !hasRefreshed || !wasClosed;
+    hasRefreshed = true;
+    wasClosed = true;
+    void sharedCardsSnapshot(host, force)
+      .then((cards) => {
+        const mine = cards.filter((item) => item.senderDid === selfDid);
+        const hasActiveParty = cards.some((item) => {
+          const state = item.state as MusicState | undefined;
+          return (
+            item.id !== card.id &&
+            !!state &&
+            !state.closed &&
+            state.members.has(selfDid)
+          );
+        });
+        canRecreate =
+          music.closed &&
+          music.queue.length > 0 &&
+          mine.at(-1)?.id === card.id &&
+          !hasActiveParty;
+      })
+      .finally(() => {
+        refreshInFlight = false;
+        if (refreshQueued) {
+          refreshQueued = false;
+          refreshRecreate();
+        }
+      });
+  };
   const current = $derived(
     music.currentIndex === null ? null : music.queue[music.currentIndex]
   );
@@ -401,51 +444,11 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       );
     }
   }
+  $effect(() => {
+    if (music.closed) refreshRecreate();
+  });
   onMount(() => {
     void initializeAudioVolume(host.storage);
-    let refreshInFlight = false;
-    let refreshQueued = false;
-    let wasClosed = music.closed;
-    let hasRefreshed = false;
-    const refreshRecreate = () => {
-      if (!music.closed) {
-        canRecreate = false;
-        return;
-      }
-      if (refreshInFlight) {
-        refreshQueued = true;
-        return;
-      }
-      refreshInFlight = true;
-      const force = !hasRefreshed || !wasClosed;
-      hasRefreshed = true;
-      wasClosed = true;
-      void sharedCardsSnapshot(host, force)
-        .then((cards) => {
-          const mine = cards.filter((item) => item.senderDid === selfDid);
-          const hasActiveParty = cards.some((item) => {
-            const state = item.state as MusicState | undefined;
-            return (
-              item.id !== card.id &&
-              !!state &&
-              !state.closed &&
-              state.members.has(selfDid)
-            );
-          });
-          canRecreate =
-            music.closed &&
-            music.queue.length > 0 &&
-            mine.at(-1)?.id === card.id &&
-            !hasActiveParty;
-        })
-        .finally(() => {
-          refreshInFlight = false;
-          if (refreshQueued) {
-            refreshQueued = false;
-            refreshRecreate();
-          }
-        });
-    };
     refreshRecreate();
     const unsubscribeCardStates = host.onCardStateChange(refreshRecreate);
     const identityTimer = window.setInterval(() => {
