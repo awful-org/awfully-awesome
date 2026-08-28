@@ -223,9 +223,11 @@
 
   function reportPlaylist() {
     if (!playlistId || playlistId === reportedPlaylist) return;
-    const videoIds =
-      player?.getPlaylist().filter((id) => /^[A-Za-z0-9_-]{11}$/.test(id)) ??
-      [];
+    // The reducer enforces QUEUE_CAP; slicing here just spares the room a
+    // doomed tail of resolve batches for a multi-thousand-video playlist.
+    const videoIds = (
+      player?.getPlaylist().filter((id) => /^[A-Za-z0-9_-]{11}$/.test(id)) ?? []
+    ).slice(0, 200);
     if (!videoIds.length) return;
     reportedPlaylist = playlistId;
     if (playlistReporter) window.clearInterval(playlistReporter);

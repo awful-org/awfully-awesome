@@ -164,6 +164,16 @@ function validPosition(position: unknown): position is number {
  *  over the party's whole life, paid on every cold rebuild. */
 const ACTIVITY_CAP = 16;
 
+/**
+ * Room-wide queue ceiling, ENFORCED here because update.data is untrusted -
+ * the README's "up to 200" was only a promise until this line. Every member
+ * renders the whole queue, so an unbounded playlist import is an unbounded
+ * DOM on every client.
+ */
+export const QUEUE_CAP = 200;
+/** Pending playlist imports; more than a couple queued is a stuck resolver. */
+const PLAYLIST_REQUEST_CAP = 3;
+
 function withActivity(
   state: MusicState,
   ctx: UpdateCtx,
@@ -318,7 +328,9 @@ export function reduce(
       if (
         typeof data.playlistId !== "string" ||
         !/^[A-Za-z0-9_-]{10,128}$/.test(data.playlistId) ||
-        music.playlistRequests.includes(data.playlistId)
+        music.playlistRequests.includes(data.playlistId) ||
+        music.playlistRequests.length >= PLAYLIST_REQUEST_CAP ||
+        music.queue.length >= QUEUE_CAP
       )
         return music;
       return withActivity(
@@ -340,11 +352,19 @@ export function reduce(
         typeof data.done !== "boolean"
       )
         return music;
-      const videoIds = data.videoIds.filter(validVideoId).slice(0, 2);
+      // A full queue retires the request instead of letting the resolver
+      // spin on a head entry that can never land another track.
+      const room = QUEUE_CAP - music.queue.length;
+      if (room <= 0)
+        return { ...music, playlistRequests: music.playlistRequests.slice(1) };
+      const videoIds = data.videoIds
+        .filter(validVideoId)
+        .slice(0, Math.min(2, room));
       if (!videoIds.length) return music;
-      const playlistRequests = data.done
-        ? music.playlistRequests.slice(1)
-        : music.playlistRequests;
+      const playlistRequests =
+        data.done || room <= videoIds.length
+          ? music.playlistRequests.slice(1)
+          : music.playlistRequests;
       return {
         ...music,
         playlistRequests,
@@ -379,7 +399,8 @@ export function reduce(
       return nextTrack(music);
     }
     case "add": {
-      if (!validVideoId(data.videoId)) return music;
+      if (!validVideoId(data.videoId) || music.queue.length >= QUEUE_CAP)
+        return music;
       return withActivity(
         { ...music, queue: [...music.queue, data.videoId] },
         ctx,

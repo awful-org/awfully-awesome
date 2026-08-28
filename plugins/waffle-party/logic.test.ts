@@ -3,6 +3,7 @@ import {
   initialState,
   syncResponder,
   playlistIdFromUrl,
+  QUEUE_CAP,
   reduce,
   videoIdFromUrl,
   type MusicState,
@@ -329,6 +330,73 @@ describe("syncResponder", () => {
 
     s = update(s, { action: "join" }, "Carol") as MusicState;
     expect(syncResponder(s)).toBe("did:Owner");
+  });
+
+  it("rejects adds once the queue is at QUEUE_CAP", () => {
+    const base = update(
+      initialState({ videoId: first, ownerDid: "did:Host" }),
+      { action: "join" },
+      "Host"
+    ) as MusicState;
+    const full = {
+      ...base,
+      queue: Array.from({ length: QUEUE_CAP }, (_, i) => `vid${i}`),
+    } as MusicState;
+    expect(update(full, { action: "add", videoId: second }, "Host")).toBe(full);
+    expect(
+      update(full, { action: "add-playlist", playlistId: "PL1234567890" }, "Host")
+    ).toBe(full);
+  });
+
+  it("a full queue retires the pending playlist request instead of looping", () => {
+    const base = update(
+      initialState({ videoId: first, ownerDid: "did:Host" }),
+      { action: "join" },
+      "Host"
+    ) as MusicState;
+    const full = {
+      ...base,
+      queue: Array.from({ length: QUEUE_CAP }, (_, i) => `vid${i}`),
+      playlistRequests: ["PL1234567890"],
+    } as MusicState;
+    const next = update(
+      full,
+      {
+        action: "resolve-playlist",
+        playlistId: "PL1234567890",
+        videoIds: [second],
+        done: false,
+      },
+      "Host"
+    ) as MusicState;
+    expect(next.queue).toHaveLength(QUEUE_CAP);
+    expect(next.playlistRequests).toEqual([]);
+  });
+
+  it("trims a resolve batch to the room left and retires the request", () => {
+    const base = update(
+      initialState({ videoId: first, ownerDid: "did:Host" }),
+      { action: "join" },
+      "Host"
+    ) as MusicState;
+    const nearlyFull = {
+      ...base,
+      queue: Array.from({ length: QUEUE_CAP - 1 }, (_, i) => `vid${i}`),
+      playlistRequests: ["PL1234567890"],
+    } as MusicState;
+    const next = update(
+      nearlyFull,
+      {
+        action: "resolve-playlist",
+        playlistId: "PL1234567890",
+        videoIds: [first, second],
+        done: false,
+      },
+      "Host"
+    ) as MusicState;
+    expect(next.queue).toHaveLength(QUEUE_CAP);
+    expect(next.queue[QUEUE_CAP - 1]).toBe(first);
+    expect(next.playlistRequests).toEqual([]);
   });
 
   it("falls back to the longest-standing member when the owner is gone", () => {

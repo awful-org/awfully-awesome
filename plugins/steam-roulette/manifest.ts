@@ -7,7 +7,7 @@ export const manifest: PluginManifest = {
   icon: "lucide:joystick",
   author: "awful-org",
   license: "MIT",
-  version: "1.1.0",
+  version: "1.1.1",
   repository: "https://github.com/awful-org/awfully-awesome",
   apiVersion: 1,
   commands: [{ name: "steam", usage: "/steam - roulette over shared Steam games" }],

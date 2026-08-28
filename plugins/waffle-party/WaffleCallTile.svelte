@@ -286,7 +286,9 @@
       }}
       aria-label={music.playing ? "Pause for everyone" : "Play for everyone"}
       title={music.playing ? "Pause for everyone" : "Play for everyone"}
-      class="pointer-events-auto absolute left-1/2 top-1/2 z-20 grid size-14 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full bg-black/60 text-white opacity-0 transition-opacity hover:opacity-100 focus-visible:opacity-100"
+      class="absolute left-1/2 top-1/2 z-20 grid size-14 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full bg-black/60 text-white opacity-0 transition-opacity {chromeVisible
+        ? 'pointer-events-auto hover:opacity-100 focus-visible:opacity-100'
+        : 'pointer-events-none'}"
     >
       {#if music.playing}<Pause class="size-6" />{:else}<Play
           class="size-6"
