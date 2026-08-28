@@ -84,6 +84,16 @@
         // (remote seek/sync) flow through to the player.
         queueMicrotask(() => (handoffPosition = null));
       }
+      // The handoff is only a local continuity hint and can already be a few
+      // seconds behind the owner. Ask the owner for its live player position
+      // once on every watch takeover so the call tile converges immediately.
+      if (selfDid !== music.ownerDid) {
+        void send({
+          action: "resync",
+          requestId: crypto.randomUUID(),
+          requesterDid: selfDid,
+        });
+      }
     });
   });
   $effect(() => {
