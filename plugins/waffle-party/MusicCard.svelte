@@ -193,6 +193,9 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       transition = h;
       transitionNow = Date.now();
       localPosition = h.position;
+      // Suppress the join-sync effect that fires next: the handoff already
+      // covers the auto-join activity the tile just created.
+      syncedJoinCount = music.activitySeq;
       if (selfDid === music.ownerDid && Math.abs(h.position - music.position) > 2)
         void send({ action: "seek", position: Math.floor(h.position) });
       else if (selfDid !== music.ownerDid) {

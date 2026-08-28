@@ -196,7 +196,8 @@
     if (
       selfDid !== music.ownerDid ||
       (!joinedNeedsSync && !requestNeedsSync) ||
-      music.currentIndex === null
+      music.currentIndex === null ||
+      handoffConsumed
     )
       return;
     syncedJoinCount = music.activitySeq;
