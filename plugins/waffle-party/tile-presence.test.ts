@@ -67,33 +67,50 @@ describe("position source", () => {
 
 describe("renderer handoff", () => {
   it("hands a paused position over as-is, exactly once", () => {
-    parkHandoff("video", 120, false);
-    expect(takeHandoff("video")).toEqual({ position: 120, playing: false });
+    parkHandoff("video", 120, 205, false);
+    expect(takeHandoff("video")).toMatchObject({
+      position: 120,
+      duration: 205,
+      playing: false,
+    });
     expect(takeHandoff()).toBeNull();
   });
 
   it("extrapolates elapsed time while playing", () => {
-    parkHandoff("video", 120, true);
+    parkHandoff("video", 120, 205, true);
     vi.advanceTimersByTime(3000);
     expect(takeHandoff()?.position).toBeCloseTo(123);
   });
 
   it("does not extrapolate while paused", () => {
-    parkHandoff("video", 120, false);
+    parkHandoff("video", 120, 205, false);
     vi.advanceTimersByTime(3000);
     expect(takeHandoff()?.position).toBe(120);
   });
 
   it("expires after 15 seconds", () => {
-    parkHandoff("video", 120, true);
+    parkHandoff("video", 120, 205, true);
     vi.advanceTimersByTime(15_001);
     expect(takeHandoff()).toBeNull();
   });
 
   it("ignores useless positions", () => {
-    parkHandoff("video", 0, true);
+    parkHandoff("video", 0, 205, true);
     expect(takeHandoff()).toBeNull();
-    parkHandoff("video", NaN, true);
+    parkHandoff("video", NaN, 205, true);
     expect(takeHandoff()).toBeNull();
+  });
+
+  it("allows a fresh handoff after the previous one was consumed", () => {
+    parkHandoff("video", 100, 205, false);
+    expect(takeHandoff("video")).toMatchObject({
+      position: 100,
+      duration: 205,
+      playing: false,
+    });
+    expect(takeHandoff("video")).toBeNull();
+    // Simulate the tile parking a new handoff after taking the first one.
+    parkHandoff("video", 200, 205, true);
+    expect(takeHandoff("video")?.position).toBeCloseTo(200);
   });
 });

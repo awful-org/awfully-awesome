@@ -29,8 +29,8 @@
     livePosition,
     liveDurationState,
     parkHandoff,
-    peekHandoff,
     takeHandoff,
+    type RendererHandoff,
   } from "./tile-presence.svelte";
   import { cachedTitle, fetchTitle } from "./titles";
   import { readAudioPrefs, writeAudioPrefs } from "./audio-prefs";
@@ -72,12 +72,14 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   let error = $state("");
   let player: WafflePlayer | null = null;
   let localPosition = $state(music.position);
-  let handoffPosition = $state<number | null>(null);
-  let handoffVideo = $state<string | null>(null);
+  let transition = $state<RendererHandoff | null>(null);
+  let transitionNow = $state(Date.now());
+  let activeResyncId = $state<string | null>(null);
   let duration = $state(0);
   let seekValue = $state(music.position);
   let seeking = $state(false);
   let syncedJoinCount = 0;
+  let syncedRequestId = "";
   let titles = $state<Record<string, string>>({});
   let volume = $state(100);
   let pending = $state<string | null>(null);
@@ -89,14 +91,27 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   const current = $derived(
     music.currentIndex === null ? null : music.queue[music.currentIndex]
   );
+  const transitionPosition = $derived.by(() => {
+    if (!transition) return localPosition;
+    const elapsed = transition.playing
+      ? Math.max(0, transitionNow - transition.at) / 1_000
+      : 0;
+    return Math.min(
+      transition.duration || Number.POSITIVE_INFINITY,
+      transition.position + elapsed
+    );
+  });
   const rendererPosition = $derived.by(() => {
-    const handoff = peekHandoff();
     return tilePresence.count > 0
       ? livePosition(music.position)
-      : handoff?.position ?? localPosition;
+      : transition
+        ? transitionPosition
+        : localPosition;
   });
   const rendererDuration = $derived(
-    tilePresence.count > 0 ? liveDurationState.duration : duration
+    tilePresence.count > 0
+      ? liveDurationState.duration
+      : transition?.duration || duration
   );
   const displayedPosition = $derived(seeking ? seekValue : rendererPosition);
   const joined = $derived(music.members.has(selfDid));
@@ -106,6 +121,31 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       did === music.ownerDid ? card.senderName : name
     )
   );
+
+  $effect(() => {
+    if (!transition?.playing) return;
+    const timer = window.setInterval(() => (transitionNow = Date.now()), 250);
+    return () => window.clearInterval(timer);
+  });
+
+  $effect(() => {
+    const response = music.syncResponse;
+    if (
+      !response ||
+      response.targetDid !== selfDid ||
+      response.id !== activeResyncId
+    )
+      return;
+    activeResyncId = null;
+    transition = {
+      token: transition?.token ?? 0,
+      position: music.position,
+      duration: response.duration || transition?.duration || duration,
+      playing: music.playing,
+      at: Date.now(),
+    };
+    transitionNow = Date.now();
+  });
 
   async function send(data: unknown, label?: string) {
     if (label) pending = label;
@@ -123,7 +163,12 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       () => player?.currentTime() ?? localPosition
     );
     return () => {
-      parkHandoff(current, player?.currentTime() ?? localPosition, music.playing);
+      parkHandoff(
+        current,
+        player?.currentTime() ?? localPosition,
+        duration,
+        music.playing
+      );
       unregister();
     };
   });
@@ -137,12 +182,20 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     if (tilePresence.count > 0 || !joined || !current || music.closed) return;
     const h = takeHandoff(current);
     if (h) {
-      handoffPosition = h.position;
-      handoffVideo = current;
+      transition = h;
+      transitionNow = Date.now();
       localPosition = h.position;
       if (selfDid === music.ownerDid && Math.abs(h.position - music.position) > 2)
         void send({ action: "seek", position: Math.floor(h.position) });
-      else if (selfDid !== music.ownerDid) void send({ action: "resync" });
+      else if (selfDid !== music.ownerDid) {
+        const requestId = crypto.randomUUID();
+        activeResyncId = requestId;
+        void send({
+          action: "resync",
+          requestId,
+          requesterDid: selfDid,
+        });
+      }
     }
   });
 
@@ -195,6 +248,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   }
   function commitSeek() {
     seeking = false;
+    transition = null;
     void send({ action: "seek", position: seekValue });
   }
   function formatTime(seconds: number): string {
@@ -250,17 +304,21 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   }
   $effect(() => {
     const latest = music.activity.at(-1);
+    const request = music.syncRequest;
+    const joinedNeedsSync =
+      latest?.action === "joined" && music.activitySeq !== syncedJoinCount;
+    const requestNeedsSync = !!request && request.id !== syncedRequestId;
     if (
       // The tile is the renderer: it owns the join-sync too, and this
       // card's player is not even mounted to read a position from.
       tilePresence.count > 0 ||
       selfDid !== music.ownerDid ||
-      latest?.action !== "joined" && latest?.action !== "sync requested" ||
-      music.activitySeq === syncedJoinCount ||
+      (!joinedNeedsSync && !requestNeedsSync) ||
       music.currentIndex === null
     )
       return;
     syncedJoinCount = music.activitySeq;
+    if (request) syncedRequestId = request.id;
     void send({
       action: "sync",
       index: music.currentIndex,
@@ -268,6 +326,10 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
         player?.currentTime() ??
         (tilePresence.count > 0 ? livePosition(music.position) : rendererPosition),
       playing: music.playing,
+      duration,
+      ...(request
+        ? { requestId: request.id, targetDid: request.requesterDid }
+        : {}),
     });
   });
   async function add() {
@@ -467,12 +529,16 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
         videoId={current}
         playlistId={current ? null : pendingPlaylist}
         playing={current ? music.playing : false}
-        position={
-          handoffVideo === current ? handoffPosition ?? music.position : music.position
-        }
+        position={transition?.position ?? music.position}
         {volume}
-        onPosition={(value) => (localPosition = value)}
-        onDuration={(value) => (duration = value)}
+        onPosition={(value) => {
+          localPosition = value;
+          if (!playerLoading && duration > 0) transition = null;
+        }}
+        onDuration={(value) => {
+          if (value > 0) duration = value;
+          if (!playerLoading && value > 0) transition = null;
+        }}
         onEnded={ended}
         onReady={() => (playerLoading = false)}
         onPlayable={() => (playerLoading = false)}

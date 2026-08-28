@@ -37,6 +37,8 @@ export interface MusicState {
   ownerDid: string;
   members: Map<string, string>;
   playlistRequests: string[];
+  syncRequest?: { id: string; requesterDid: string };
+  syncResponse?: { id: string; targetDid: string; duration: number };
 }
 
 const VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
@@ -237,9 +239,22 @@ export function reduce(
       return withActivity({ ...music, members }, ctx, "joined", null);
     }
     case "resync": {
-      if (!music.members.has(ctx.senderDid)) return music;
+      if (
+        !music.members.has(ctx.senderDid) ||
+        typeof data.requestId !== "string" ||
+        data.requestId.length < 8 ||
+        data.requestId.length > 128 ||
+        data.requesterDid !== ctx.senderDid
+      )
+        return music;
       return withActivity(
-        music,
+        {
+          ...music,
+          syncRequest: {
+            id: data.requestId,
+            requesterDid: ctx.senderDid,
+          },
+        },
         ctx,
         "sync requested",
         music.currentIndex === null ? null : music.queue[music.currentIndex]
@@ -269,14 +284,27 @@ export function reduce(
         ctx.senderDid !== syncResponder(music) ||
         !validIndex(data.index, music.queue) ||
         !validPosition(data.position) ||
-        typeof data.playing !== "boolean"
+        typeof data.playing !== "boolean" ||
+        (data.duration !== undefined && !validPosition(data.duration))
       )
         return music;
+      const targeted =
+        typeof data.requestId === "string" &&
+        typeof data.targetDid === "string"
+          ? {
+              id: data.requestId,
+              targetDid: data.targetDid,
+              duration:
+                typeof data.duration === "number" ? data.duration : 0,
+            }
+          : undefined;
       return {
         ...music,
         currentIndex: data.index,
         position: data.position,
         playing: data.playing,
+        syncRequest: targeted ? undefined : music.syncRequest,
+        syncResponse: targeted,
       };
     }
     default:

@@ -78,7 +78,12 @@
     // so that parked handoff is available when this tile takes over.
     queueMicrotask(() => {
       const handoff = takeHandoff(current);
-      if (handoff) handoffPosition = handoff.position;
+      if (handoff) {
+        handoffPosition = handoff.position;
+        // Clear after one render so subsequent music.position updates
+        // (remote seek/sync) flow through to the player.
+        queueMicrotask(() => (handoffPosition = null));
+      }
     });
   });
   $effect(() => {
@@ -108,6 +113,7 @@
       parkHandoff(
         current,
         player ? player.currentTime() : localPosition,
+        duration,
         untrack(() => music.playing)
       );
       unregister();
@@ -149,21 +155,30 @@
   // stands down while the tile renders: when someone joins, ship them the
   // authoritative position.
   let syncedJoinCount = 0;
+  let syncedRequestId = "";
   $effect(() => {
     const latest = music.activity.at(-1);
+    const request = music.syncRequest;
+    const joinedNeedsSync =
+      latest?.action === "joined" && music.activitySeq !== syncedJoinCount;
+    const requestNeedsSync = !!request && request.id !== syncedRequestId;
     if (
-        selfDid !== music.ownerDid ||
-      latest?.action !== "joined" && latest?.action !== "sync requested" ||
-      music.activitySeq === syncedJoinCount ||
+      selfDid !== music.ownerDid ||
+      (!joinedNeedsSync && !requestNeedsSync) ||
       music.currentIndex === null
     )
       return;
     syncedJoinCount = music.activitySeq;
+    if (request) syncedRequestId = request.id;
     void send({
       action: "sync",
       index: music.currentIndex,
       position: player?.currentTime() ?? localPosition,
       playing: music.playing,
+      duration,
+      ...(request
+        ? { requestId: request.id, targetDid: request.requesterDid }
+        : {}),
     });
   });
 

@@ -58,23 +58,52 @@ export function livePosition(fallback: number): number {
  * from the STALE last-synced state.position - picks it up and re-syncs the
  * party. Consumed once, fresh only.
  */
-let _handoff: { videoId: string; position: number; playing: boolean; at: number } | null = null;
+export interface RendererHandoff {
+  token: number;
+  position: number;
+  duration: number;
+  playing: boolean;
+  at: number;
+}
 
-export function peekHandoff(videoId?: string): { position: number; playing: boolean } | null {
+let _handoff: (RendererHandoff & { videoId: string }) | null = null;
+let _handoffToken = 0;
+
+export function peekHandoff(videoId?: string): RendererHandoff | null {
   const h = _handoff;
   if (!h || (videoId && h.videoId !== videoId) || Date.now() - h.at > 15_000)
     return null;
   const elapsed = h.playing ? (Date.now() - h.at) / 1000 : 0;
-  return { position: h.position + elapsed, playing: h.playing };
+  return {
+    token: h.token,
+    position: h.position + elapsed,
+    duration: h.duration,
+    playing: h.playing,
+    // position already includes elapsed time up to this read; consumers use
+    // this timestamp as the new clock origin and must not add it twice.
+    at: Date.now(),
+  };
 }
 
-export function parkHandoff(videoId: string, position: number, playing: boolean): void {
+export function parkHandoff(
+  videoId: string,
+  position: number,
+  duration: number,
+  playing: boolean
+): void {
   if (Number.isFinite(position) && position > 0) {
-    _handoff = { videoId, position, playing, at: Date.now() };
+    _handoff = {
+      videoId,
+      token: ++_handoffToken,
+      position,
+      duration: Number.isFinite(duration) && duration > 0 ? duration : 0,
+      playing,
+      at: Date.now(),
+    };
   }
 }
 
-export function takeHandoff(videoId?: string): { position: number; playing: boolean } | null {
+export function takeHandoff(videoId?: string): RendererHandoff | null {
   const h = peekHandoff(videoId);
   _handoff = null;
   return h;

@@ -364,4 +364,61 @@ describe("join synchronization", () => {
     expect(update(state, { action: "sync", index: 0, position: 33, playing: true }, "Bob").position).toBe(33);
     expect(update(state, { action: "sync", index: 0, position: 99, playing: true }, "Carol")).toBe(state);
   });
+
+  it("tracks an authenticated resync request and its targeted host response", () => {
+    let state = initialState({ videoId: first, ownerDid: "did:Host" });
+    state = update(state, { action: "join" }, "Host");
+    state = update(state, { action: "join" }, "Bruno");
+    state = update(
+      state,
+      {
+        action: "resync",
+        requestId: "request-123",
+        requesterDid: "did:Bruno",
+      },
+      "Bruno"
+    );
+    expect(state.syncRequest).toEqual({
+      id: "request-123",
+      requesterDid: "did:Bruno",
+    });
+
+    state = update(
+      state,
+      {
+        action: "sync",
+        index: 0,
+        position: 91,
+        duration: 205,
+        playing: true,
+        requestId: "request-123",
+        targetDid: "did:Bruno",
+      },
+      "Host"
+    );
+    expect(state.position).toBe(91);
+    expect(state.syncRequest).toBeUndefined();
+    expect(state.syncResponse).toEqual({
+      id: "request-123",
+      targetDid: "did:Bruno",
+      duration: 205,
+    });
+  });
+
+  it("rejects a resync request that impersonates another member", () => {
+    let state = initialState({ videoId: first, ownerDid: "did:Host" });
+    state = update(state, { action: "join" }, "Host");
+    state = update(state, { action: "join" }, "Bruno");
+    expect(
+      update(
+        state,
+        {
+          action: "resync",
+          requestId: "request-123",
+          requesterDid: "did:Host",
+        },
+        "Bruno"
+      )
+    ).toBe(state);
+  });
 });
