@@ -102,6 +102,7 @@
         requesterDid: selfDid,
       });
     }
+    syncedJoinCount = music.activitySeq;
   });
   $effect(() => {
     const response = music.syncResponse;
@@ -196,8 +197,7 @@
     if (
       selfDid !== music.ownerDid ||
       (!joinedNeedsSync && !requestNeedsSync) ||
-      music.currentIndex === null ||
-      handoffConsumed
+      music.currentIndex === null
     )
       return;
     syncedJoinCount = music.activitySeq;
