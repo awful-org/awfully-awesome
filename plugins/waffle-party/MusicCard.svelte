@@ -30,6 +30,7 @@
     liveDurationState,
     parkHandoff,
     takeHandoff,
+    handoffIsReadyToRelease,
     type RendererHandoff,
   } from "./tile-presence.svelte";
   import { cachedTitle, fetchTitle } from "./titles";
@@ -186,6 +187,9 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     if (tilePresence.count > 0 || !joined || !current || music.closed) return;
     const h = takeHandoff(current);
     if (h) {
+      // This is a fresh iframe even when the track did not change. Do not let
+      // the previous card player's ready state release the handoff early.
+      playerLoading = true;
       transition = h;
       transitionNow = Date.now();
       localPosition = h.position;
@@ -536,11 +540,19 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
         {volume}
         onPosition={(value) => {
           localPosition = value;
-          if (!playerLoading && duration > 0) transition = null;
+          if (
+            transition &&
+            handoffIsReadyToRelease(
+              playerLoading,
+              value,
+              transitionPosition,
+              duration
+            )
+          )
+            transition = null;
         }}
         onDuration={(value) => {
           if (value > 0) duration = value;
-          if (!playerLoading && value > 0) transition = null;
         }}
         onEnded={ended}
         onReady={() => (playerLoading = false)}

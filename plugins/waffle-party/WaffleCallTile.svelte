@@ -18,7 +18,8 @@
     publishLivePosition,
     registerPositionSource,
     parkHandoff,
-    takeHandoff,
+    handoffIsReadyToRelease,
+    takeRendererPosition,
   } from "./tile-presence.svelte";
   import {
     audioVolume,
@@ -60,6 +61,8 @@
   let duration = $state(0);
   let seeking = $state(false);
   let seekValue = $state(0);
+  let playerLoading = $state(true);
+  let activeResyncId = $state<string | null>(null);
   // Consume a parked card position only once when this renderer takes over.
   // Keeping peekHandoff() in the player prop would pin the iframe to the
   // parked timestamp and prevent later shared seek actions from reaching it.
@@ -70,6 +73,8 @@
     if (current === handoffVideo) return;
     handoffVideo = current;
     handoffPosition = null;
+    playerLoading = true;
+    activeResyncId = null;
   });
   $effect(() => {
     if (!joined || !current) {
@@ -78,27 +83,40 @@
     }
     if (handoffConsumed) return;
     handoffConsumed = true;
-    // The card parks its position as tilePresence changes. Defer one microtask
-    // so that parked handoff is available when this tile takes over.
-    queueMicrotask(() => {
-      const handoff = takeHandoff(current);
-      if (handoff) {
-        handoffPosition = handoff.position;
-        // Clear after one render so subsequent music.position updates
-        // (remote seek/sync) flow through to the player.
-        queueMicrotask(() => (handoffPosition = null));
-      }
-      // The handoff is only a local continuity hint and can already be a few
-      // seconds behind the owner. Ask the owner for its live player position
-      // once on every watch takeover so the call tile converges immediately.
-      if (selfDid !== music.ownerDid) {
-        void send({
-          action: "resync",
-          requestId: crypto.randomUUID(),
-          requesterDid: selfDid,
-        });
-      }
-    });
+    // Capture the card's live source BEFORE this tile increments presence and
+    // makes the card stand down. Waiting even one microtask can miss that
+    // source on the second chat -> tile transition.
+    const takeoverPosition = takeRendererPosition(current, music.position);
+    playerLoading = true;
+    handoffPosition = takeoverPosition;
+    // Every renderer switch gets an authoritative network position too. The
+    // owner publishes its captured time; listeners ask the owner to answer.
+    if (selfDid === music.ownerDid)
+      void send({ action: "seek", position: Math.floor(takeoverPosition) });
+    else {
+      const requestId = crypto.randomUUID();
+      activeResyncId = requestId;
+      void send({
+        action: "resync",
+        requestId,
+        requesterDid: selfDid,
+      });
+    }
+  });
+  $effect(() => {
+    const response = music.syncResponse;
+    if (
+      !response ||
+      response.targetDid !== selfDid ||
+      response.id !== activeResyncId
+    )
+      return;
+    activeResyncId = null;
+    handoffPosition = music.position;
+    if (response.duration > 0) {
+      duration = response.duration;
+      publishLiveDuration(response.duration);
+    }
   });
   $effect(() => {
     void initializeAudioVolume(host.storage);
@@ -262,11 +280,24 @@
           localPosition = p;
           publishLivePosition(p, music.playing);
           if (!seeking) seekValue = p;
+          if (
+            handoffPosition !== null &&
+            handoffIsReadyToRelease(
+              playerLoading,
+              p,
+              handoffPosition,
+              duration
+            )
+          )
+            handoffPosition = null;
         }}
         onDuration={(d) => {
           duration = d;
           publishLiveDuration(d);
         }}
+        onReady={() => (playerLoading = false)}
+        onPlayable={() => (playerLoading = false)}
+        onError={() => (playerLoading = false)}
         onEnded={ended}
       />
     </div>

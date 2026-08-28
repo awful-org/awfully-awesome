@@ -8,12 +8,14 @@ vi.hoisted(() => {
 });
 
 import {
+  handoffIsReadyToRelease,
   livePosition,
   liveDurationState,
   parkHandoff,
   publishLivePosition,
   publishLiveDuration,
   registerPositionSource,
+  takeRendererPosition,
   takeHandoff,
 } from "./tile-presence.svelte";
 
@@ -66,6 +68,13 @@ describe("position source", () => {
 });
 
 describe("renderer handoff", () => {
+  it("keeps the handoff until the replacement player reaches its target", () => {
+    expect(handoffIsReadyToRelease(true, 120, 120, 205)).toBe(false);
+    expect(handoffIsReadyToRelease(false, 120, 120, 0)).toBe(false);
+    expect(handoffIsReadyToRelease(false, 0, 120, 205)).toBe(false);
+    expect(handoffIsReadyToRelease(false, 122, 120, 205)).toBe(true);
+  });
+
   it("hands a paused position over as-is, exactly once", () => {
     parkHandoff("video", 120, 205, false);
     expect(takeHandoff("video")).toMatchObject({
@@ -112,5 +121,15 @@ describe("renderer handoff", () => {
     // Simulate the tile parking a new handoff after taking the first one.
     parkHandoff("video", 200, 205, true);
     expect(takeHandoff("video")?.position).toBeCloseTo(200);
+  });
+
+  it("captures a fresh live position on every renderer takeover", () => {
+    const first = registerPositionSource(() => 120);
+    expect(takeRendererPosition("video", 0)).toBe(120);
+    first();
+
+    const second = registerPositionSource(() => 180);
+    expect(takeRendererPosition("video", 0)).toBe(180);
+    second();
   });
 });

@@ -66,6 +66,22 @@ export interface RendererHandoff {
   at: number;
 }
 
+export function handoffIsReadyToRelease(
+  playerLoading: boolean,
+  observedPosition: number,
+  expectedPosition: number,
+  duration: number
+): boolean {
+  return (
+    !playerLoading &&
+    Number.isFinite(observedPosition) &&
+    Number.isFinite(expectedPosition) &&
+    Number.isFinite(duration) &&
+    duration > 0 &&
+    Math.abs(observedPosition - expectedPosition) <= 3
+  );
+}
+
 let _handoff: (RendererHandoff & { videoId: string }) | null = null;
 let _handoffToken = 0;
 
@@ -107,4 +123,11 @@ export function takeHandoff(videoId?: string): RendererHandoff | null {
   const h = peekHandoff(videoId);
   _handoff = null;
   return h;
+}
+
+export function takeRendererPosition(
+  videoId: string,
+  fallback: number
+): number {
+  return takeHandoff(videoId)?.position ?? livePosition(fallback);
 }
