@@ -33,7 +33,11 @@
     type RendererHandoff,
   } from "./tile-presence.svelte";
   import { cachedTitle, fetchTitle } from "./titles";
-  import { readAudioPrefs, writeAudioPrefs } from "./audio-prefs";
+  import {
+    audioVolume,
+    initializeAudioVolume,
+    setAudioVolume,
+  } from "./audio-volume.svelte";
 import { createHostDepartureGrace } from "./host-departure";
 
 let cardsSnapshot:
@@ -81,7 +85,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   let syncedJoinCount = 0;
   let syncedRequestId = "";
   let titles = $state<Record<string, string>>({});
-  let volume = $state(100);
+  const volume = $derived(audioVolume.value);
   let pending = $state<string | null>(null);
   let playerLoading = $state(true);
   let selfDid = $state(host.selfDid());
@@ -291,8 +295,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     }
   }
   function setVolume(value: number) {
-    volume = value;
-    void writeAudioPrefs(host.storage, value);
+    setAudioVolume(host.storage, value);
   }
   async function recreate() {
     if (!canRecreate || !music.queue.length) return;
@@ -392,7 +395,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     }
   }
   onMount(() => {
-    void readAudioPrefs(host.storage).then((value) => (volume = value));
+    void initializeAudioVolume(host.storage);
     let refreshInFlight = false;
     let refreshQueued = false;
     let wasClosed = music.closed;
@@ -648,7 +651,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
             type="range"
             min="0"
             max="100"
-            bind:value={volume}
+            value={volume}
             onchange={(event) => setVolume(Number(event.currentTarget.value))}
           /></label
         >

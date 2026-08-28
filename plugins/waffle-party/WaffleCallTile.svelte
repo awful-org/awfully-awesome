@@ -20,7 +20,11 @@
     parkHandoff,
     takeHandoff,
   } from "./tile-presence.svelte";
-  import { readAudioPrefs, writeAudioPrefs } from "./audio-prefs";
+  import {
+    audioVolume,
+    initializeAudioVolume,
+    setAudioVolume,
+  } from "./audio-volume.svelte";
   import { cachedTitle, fetchTitle } from "./titles";
 
   interface Props {
@@ -51,7 +55,7 @@
     autoJoined = true;
     void send({ action: "join" });
   });
-  let volume = $state(100);
+  const volume = $derived(audioVolume.value);
   let localPosition = $state(0);
   let duration = $state(0);
   let seeking = $state(false);
@@ -97,11 +101,10 @@
     });
   });
   $effect(() => {
-    void readAudioPrefs(host.storage).then((value) => (volume = value));
+    void initializeAudioVolume(host.storage);
   });
   function setVolume(value: number) {
-    volume = value;
-    void writeAudioPrefs(host.storage, value);
+    setAudioVolume(host.storage, value);
   }
 
   // While this tile exists, it IS the party's renderer: the chat card
@@ -355,7 +358,7 @@
             type="range"
             min="0"
             max="100"
-            bind:value={volume}
+            value={volume}
             oninput={(event) => setVolume(Number(event.currentTarget.value))}
             aria-label="Volume (only you)"
             class="h-1 w-20 cursor-pointer accent-white"

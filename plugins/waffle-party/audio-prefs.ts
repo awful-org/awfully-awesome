@@ -35,3 +35,44 @@ export async function writeAudioPrefs(
     // The selected volume remains usable for this session.
   }
 }
+
+export interface AudioVolumeState {
+  value: number;
+}
+
+export function createAudioVolumeController(state: AudioVolumeState) {
+  let initialized = false;
+  let loading: Promise<void> | null = null;
+  let revision = 0;
+  let writes = Promise.resolve();
+
+  function initialize(storage: AudioPrefsStorage): Promise<void> {
+    if (initialized) return Promise.resolve();
+    if (loading) return loading;
+
+    const readRevision = revision;
+    loading = readAudioPrefs(storage)
+      .then((value) => {
+        // A slider interaction that happened while storage was loading wins.
+        if (revision === readRevision) state.value = value;
+        initialized = true;
+      })
+      .finally(() => {
+        loading = null;
+      });
+    return loading;
+  }
+
+  function set(storage: AudioPrefsStorage, value: unknown): Promise<void> {
+    if (!validVolume(value)) return Promise.resolve();
+    revision += 1;
+    initialized = true;
+    state.value = value;
+    // Range inputs can emit rapidly. Serialize writes so an older, slower
+    // storage request can never overwrite the user's final selected volume.
+    writes = writes.then(() => writeAudioPrefs(storage, value));
+    return writes;
+  }
+
+  return { initialize, set };
+}
