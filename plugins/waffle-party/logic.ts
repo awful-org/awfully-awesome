@@ -128,7 +128,14 @@ export function initialState(cardData: unknown): MusicState {
     /^[A-Za-z0-9_-]{10,128}$/.test(data.playlistId)
       ? data.playlistId
       : null;
-  const ownerDid = typeof data?.ownerDid === "string" ? data.ownerDid : "";
+  // cardData comes from a peer, so an absent or empty ownerDid is not a
+  // party with no host - it is a party nobody can be shown to own. Every
+  // real creation path sets it (index.ts and MusicCard's start-again both
+  // pass selfDid), so the only way to get here is a forged card.
+  const ownerDid =
+    typeof data?.ownerDid === "string" && data.ownerDid !== ""
+      ? data.ownerDid
+      : "";
   return {
     queue,
     currentIndex,
@@ -137,7 +144,9 @@ export function initialState(cardData: unknown): MusicState {
     activity: [],
     activitySeq: 0,
     loop: "off",
-    closed: false,
+    // Born closed when there is no owner, so the reducer's first line turns
+    // every action into a no-op rather than each gate having to remember.
+    closed: ownerDid === "",
     ownerDid,
     members: new Map(ownerDid ? [[ownerDid, "Host"]] : []),
     playlistRequests: playlistId ? [playlistId] : [],
@@ -221,7 +230,11 @@ export function reduce(
 
   switch (data.action) {
     case "close":
-      return music.ownerDid && ctx.senderDid !== music.ownerDid
+      // Strict, with no `music.ownerDid &&` in front of it. That guard reads
+      // as "only check when there is an owner" and behaves as "skip the
+      // check when there is not", which let any peer disband a party whose
+      // card simply omitted the field.
+      return ctx.senderDid !== music.ownerDid
         ? music
         : withActivity(
             { ...music, playing: false, closed: true },
@@ -321,7 +334,10 @@ export function reduce(
       break;
   }
 
-  if (music.ownerDid && !music.members.has(ctx.senderDid)) return music;
+  // Likewise unconditional. The owner is seeded into members at creation
+  // and "join" is handled above this line, so nothing legitimate is locked
+  // out - but a card with no owner no longer waves everybody through.
+  if (!music.members.has(ctx.senderDid)) return music;
 
   switch (data.action) {
     case "add-playlist": {

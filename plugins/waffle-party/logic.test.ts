@@ -24,6 +24,17 @@ function update(state: MusicState, data: unknown, name = "Alice") {
   return reduce(state, { data }, ctx(name));
 }
 
+/**
+ * A party as one is actually created: with an owner.
+ *
+ * These fixtures used to omit ownerDid, which is not a shape any creation
+ * path produces - both pass selfDid - and it quietly leaned on the hole
+ * these tests now cover: an ownerless card waved every action through.
+ */
+function party(data: Record<string, unknown> = {}): MusicState {
+  return initialState({ videoId: first, ownerDid: "did:Alice", ...data });
+}
+
 describe("videoIdFromUrl", () => {
   it("accepts supported YouTube URL forms", () => {
     expect(videoIdFromUrl(`https://www.youtube.com/watch?v=${first}`)).toBe(
@@ -66,7 +77,7 @@ describe("playlistIdFromUrl", () => {
 
 describe("music reducer", () => {
   it("seeds one selected queue item from card data", () => {
-    expect(initialState({ videoId: first })).toEqual({
+    expect(party()).toEqual({
       queue: [first],
       currentIndex: 0,
       playing: true,
@@ -75,15 +86,15 @@ describe("music reducer", () => {
       activitySeq: 0,
       loop: "off",
       closed: false,
-      ownerDid: "",
-      members: new Map(),
+      ownerDid: "did:Alice",
+      members: new Map([["did:Alice", "Host"]]),
       playlistRequests: [],
     });
-    expect(initialState({ videoId: "invalid" }).queue).toEqual([]);
+    expect(party({ videoId: "invalid" }).queue).toEqual([]);
   });
 
   it("seeds a recreated queue at its selected track", () => {
-    const state = initialState({ queue: [first, second], currentIndex: 1 });
+    const state = party({ queue: [first, second], currentIndex: 1 });
     expect(state.queue).toEqual([first, second]);
     expect(state.currentIndex).toBe(1);
     expect(state.position).toBe(0);
@@ -92,12 +103,13 @@ describe("music reducer", () => {
 
   it("adds a valid entry and records the verified actor", () => {
     const state = update(
-      initialState({ videoId: first }),
+      update(party(), { action: "join" }, "Bruno"),
       { action: "add", videoId: second },
       "Bruno"
     );
     expect(state.queue).toEqual([first, second]);
     expect(state.activity).toEqual([
+      { senderName: "Bruno", action: "joined", videoId: null },
       { senderName: "Bruno", action: "added", videoId: second },
     ]);
   });
@@ -148,7 +160,7 @@ describe("music reducer", () => {
   });
 
   it("rejects invalid adds without changing state or activity", () => {
-    const original = initialState({ videoId: first });
+    const original = party();
     expect(update(original, { action: "add", videoId: "invalid" })).toBe(
       original
     );
@@ -157,10 +169,11 @@ describe("music reducer", () => {
   it("removes the selected entry and selects the remaining entry", () => {
     const state = update(
       {
-        ...initialState({ videoId: first }),
+        ...party(),
         queue: [first, second],
         playing: true,
         position: 25,
+        members: new Map([...party().members, ["did:Carla", "Carla"]]),
       },
       { action: "remove", index: 0 },
       "Carla"
@@ -176,7 +189,7 @@ describe("music reducer", () => {
   });
 
   it("stops playback when the final entry is removed", () => {
-    const state = update(initialState({ videoId: first }), {
+    const state = update(party(), {
       action: "remove",
       index: 0,
     });
@@ -187,7 +200,7 @@ describe("music reducer", () => {
 
   it("skips to the next track and stops after the final track when looping is off", () => {
     const queued = {
-      ...initialState({ videoId: first }),
+      ...party(),
       queue: [first, second],
       playing: true,
     };
@@ -202,7 +215,7 @@ describe("music reducer", () => {
 
   it("restarts or wraps the final track when the selected loop mode requires it", () => {
     const last = {
-      ...initialState({ videoId: first }),
+      ...party(),
       queue: [first, second],
       currentIndex: 1,
       playing: true,
@@ -221,7 +234,7 @@ describe("music reducer", () => {
 
   it("goes to the previous track and respects queue and track looping", () => {
     const secondTrack = {
-      ...initialState({ videoId: first }),
+      ...party(),
       queue: [first, second],
       currentIndex: 1,
       playing: true,
@@ -242,13 +255,17 @@ describe("music reducer", () => {
   });
 
   it("persists valid playback intent and rejects invalid positions", () => {
-    const started = update(initialState({ videoId: first }), {
+    const started = update(party(), {
       action: "play",
       position: 12,
     });
     expect(started.playing).toBe(true);
     expect(started.position).toBe(12);
-    const paused = update(started, { action: "pause", position: 18 }, "Dana");
+    const seated = {
+      ...started,
+      members: new Map([...started.members, ["did:Dana", "Dana"]]),
+    };
+    const paused = update(seated, { action: "pause", position: 18 }, "Dana");
     expect(paused.playing).toBe(false);
     expect(paused.position).toBe(18);
     expect(paused.activity.at(-1)).toEqual({
@@ -264,7 +281,7 @@ describe("music reducer", () => {
 
   it("selects a numbered queue entry and closes a prior party", () => {
     const queued = {
-      ...initialState({ videoId: first }),
+      ...party(),
       queue: [first, second],
     };
     const selected = update(queued, { action: "select", index: 1 });
@@ -302,7 +319,7 @@ describe("music reducer", () => {
 
   it("loops a track or queue when an ended update targets the current item", () => {
     const track = {
-      ...initialState({ videoId: first }),
+      ...party(),
       playing: true,
       loop: "track" as const,
       position: 80,
@@ -488,5 +505,64 @@ describe("join synchronization", () => {
         "Bruno"
       )
     ).toBe(state);
+  });
+});
+
+describe("a card that names no owner is inert, not unowned", () => {
+  // cardData is peer-supplied. Two gates used to read "if there is an owner,
+  // check the sender against it", which behaves as "skip the check when
+  // there is not" - so a forged card omitting ownerDid let any peer disband
+  // the party and mutate its queue.
+  const forged = () => initialState({ videoId: first });
+
+  it("has no owner and no members", () => {
+    expect(forged().ownerDid).toBe("");
+    expect(forged().members.size).toBe(0);
+  });
+
+  it("cannot be disbanded by a passer-by", () => {
+    const after = update(forged(), { action: "close" }, "Mallory");
+    expect(after.closed).toBe(true); // born closed
+    // What matters is that Mallory did not do it: the state is untouched.
+    expect(after).toEqual(forged());
+  });
+
+  it("cannot have its queue mutated by a passer-by", () => {
+    const after = update(forged(), { action: "add", videoId: second }, "Mallory");
+    expect(after.queue).toEqual(forged().queue);
+  });
+
+  it("cannot be joined into existence", () => {
+    const after = update(forged(), { action: "join" }, "Mallory");
+    expect(after.members.size).toBe(0);
+  });
+});
+
+describe("a properly owned party still works", () => {
+  const owned = () =>
+    initialState({ videoId: first, ownerDid: "did:Alice" });
+
+  it("seats the owner as a member", () => {
+    expect(owned().closed).toBe(false);
+    expect(owned().members.has("did:Alice")).toBe(true);
+  });
+
+  it("lets the owner disband it", () => {
+    expect(update(owned(), { action: "close" }, "Alice").closed).toBe(true);
+  });
+
+  it("does not let anybody else disband it", () => {
+    expect(update(owned(), { action: "close" }, "Mallory").closed).toBe(false);
+  });
+
+  it("lets a member queue a track once they have joined", () => {
+    const joined = update(owned(), { action: "join" }, "Bob");
+    const after = update(joined, { action: "add", videoId: second }, "Bob");
+    expect(after.queue).toContain(second);
+  });
+
+  it("still turns away a stranger who never joined", () => {
+    const after = update(owned(), { action: "add", videoId: second }, "Mallory");
+    expect(after.queue).not.toContain(second);
   });
 });
