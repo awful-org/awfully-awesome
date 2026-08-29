@@ -696,6 +696,12 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
             </Tip>{/if}
           </div>
         </div>
+        <!-- oninput, not onchange: change fires on RELEASE, so the volume
+             jumped only once the drag ended and there was no way to find a
+             level by ear. The seek slider above keeps the split because
+             scrubbing on every pixel is expensive; volume has no such
+             reason. The readout is here because a bare track with no number
+             gives no way to tell where you are or where you were. -->
         <label class="flex items-center gap-2"
           >Vol <input
             class="w-1/4 max-w-24"
@@ -703,8 +709,16 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
             min="0"
             max="100"
             value={volume}
-            onchange={(event) => setVolume(Number(event.currentTarget.value))}
-          /></label
+            oninput={(event) => setVolume(Number(event.currentTarget.value))}
+            aria-label="Volume (only you)"
+          /><!-- aria-hidden: a range input already announces its value, and
+               without this the accessible NAME became "Vol 74%" and changed
+               on every pixel of the drag. Same label as the call tile's, so
+               the two surfaces describe the same control the same way. -->
+          <span
+            aria-hidden="true"
+            class="w-8 shrink-0 text-right tabular-nums">{volume}%</span
+          ></label
         >
       </div>
     </div>
