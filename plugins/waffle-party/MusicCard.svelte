@@ -1,40 +1,13 @@
-<script module lang="ts">
-  export type LoopMode = "off" | "track" | "queue";
-
-  export function loopLabelFor(mode: LoopMode): string {
-    return mode === "off"
-      ? "Loop Off"
-      : mode === "track"
-        ? "Loop Track"
-        : "Loop Queue";
-  }
-
-  export function loopButtonClass(mode: LoopMode): string {
-    return mode === "off"
-      ? "border-border hover:bg-muted"
-      : "border-green-500/50 text-green-500 hover:bg-green-500/10";
-  }
-
-  export function queueButtonClass(open: boolean): string {
-    return open
-      ? "border-green-500/50 bg-green-500/10 text-green-500 hover:bg-green-500/20"
-      : "border-border hover:bg-muted";
-  }
-</script>
-
 <script lang="ts">
   import { onMount } from "svelte";
   import {
-    Ban,
     CircleOff,
     List,
-    ListMusic,
     LogIn,
     LogOut,
     Pause,
     Play,
     Plus,
-    Repeat1,
     SkipBack,
     SkipForward,
     Trash2,
@@ -42,6 +15,7 @@
   import type { HostApi } from "$lib/plugins/api";
   import type { Message } from "$lib/transport/transport.svelte";
   import WafflePlayer from "./WafflePlayer.svelte";
+  import LoopButton, { queueButtonClass } from "./LoopButton.svelte";
   import {
     playlistIdFromUrl,
     videoIdFromUrl,
@@ -53,9 +27,8 @@
     livePosition,
     liveDurationState,
     parkHandoff,
-    takeHandoff,
     handoffIsReadyToRelease,
-    rendererSyncUpdate,
+    takeParkedRendererControl,
     type RendererHandoff,
   } from "./tile-presence.svelte";
   import { cachedTitle, fetchTitle } from "./titles";
@@ -189,7 +162,6 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   const displayedPosition = $derived(seeking ? seekValue : rendererPosition);
   const joined = $derived(music.members.has(selfDid));
   const pendingPlaylist = $derived(music.playlistRequests[0] ?? null);
-  const loopLabel = $derived(loopLabelFor(music.loop));
   const listeners = $derived(
     Array.from(music.members.entries()).map(([did, name]) =>
       did === music.ownerDid ? card.senderName : name
@@ -254,8 +226,15 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   // saves US from restarting at the stale point.
   $effect(() => {
     if (tilePresence.count > 0 || !joined || !current || music.closed) return;
-    const h = takeHandoff(current);
-    if (h) {
+    const requestId = selfDid === music.ownerDid ? "" : crypto.randomUUID();
+    const takeover = takeParkedRendererControl(
+      current,
+      selfDid,
+      music.ownerDid,
+      requestId
+    );
+    if (takeover) {
+      const h = takeover.handoff;
       // This is a fresh iframe even when the track did not change. Do not let
       // the previous card player's ready state release the handoff early.
       playerLoading = true;
@@ -265,16 +244,8 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       // Suppress the join-sync effect that fires next: the handoff already
       // covers the auto-join activity the tile just created.
       syncedJoinCount = music.activitySeq;
-      const requestId =
-        selfDid === music.ownerDid ? "" : crypto.randomUUID();
-      const update = rendererSyncUpdate(
-        selfDid,
-        music.ownerDid,
-        h.position,
-        requestId
-      );
-      if (update.action === "resync") activeResyncId = requestId;
-      void send(update);
+      if (takeover.update.action === "resync") activeResyncId = requestId;
+      void send(takeover.update);
     }
   });
 
@@ -660,13 +631,11 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
             onclick={() => (queueOpen = !queueOpen)}
             aria-label={queueOpen ? "Hide queue" : "Show queue"} title={queueOpen ? "Hide queue" : "Show queue"}><List class="size-4" /></button
           >
-          <button
-            class="flex items-center gap-1 rounded border px-3 py-2 transition-colors disabled:opacity-60 {loopButtonClass(music.loop)}"
+          <LoopButton
+            mode={music.loop}
             disabled={pending !== null}
             onclick={cycleLoop}
-            aria-label={loopLabel}
-            title={loopLabel}
-          >{#if music.loop === "off"}<Ban class="size-4" />{:else if music.loop === "track"}<Repeat1 class="size-4" />{:else}<ListMusic class="size-4" />{/if}</button>
+          />
           </div>
           <div class="ml-auto flex gap-2">
           {#if selfDid === music.ownerDid}<button

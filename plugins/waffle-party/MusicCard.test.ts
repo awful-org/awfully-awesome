@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import {
+import { render } from "svelte/server";
+import LoopButton, {
   loopButtonClass,
   loopLabelFor,
   queueButtonClass,
-} from "./MusicCard.svelte";
+} from "./LoopButton.svelte";
 
 describe("party control states", () => {
   it.each([
@@ -12,6 +13,11 @@ describe("party control states", () => {
     ["queue", "Loop Queue"],
   ] as const)("labels %s loop mode", (mode, label) => {
     expect(loopLabelFor(mode)).toBe(label);
+    const { body } = render(LoopButton, {
+      props: { mode, onclick: () => {} },
+    });
+    expect(body).toContain(`aria-label="${label}"`);
+    expect(body).toContain(`title="${label}"`);
   });
 
   it("keeps the off loop muted and active loops green", () => {
