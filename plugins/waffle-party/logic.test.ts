@@ -69,7 +69,7 @@ describe("music reducer", () => {
     expect(initialState({ videoId: first })).toEqual({
       queue: [first],
       currentIndex: 0,
-      playing: false,
+      playing: true,
       position: 0,
       activity: [],
       activitySeq: 0,
@@ -80,6 +80,14 @@ describe("music reducer", () => {
       playlistRequests: [],
     });
     expect(initialState({ videoId: "invalid" }).queue).toEqual([]);
+  });
+
+  it("seeds a recreated queue at its selected track", () => {
+    const state = initialState({ queue: [first, second], currentIndex: 1 });
+    expect(state.queue).toEqual([first, second]);
+    expect(state.currentIndex).toBe(1);
+    expect(state.position).toBe(0);
+    expect(state.playing).toBe(true);
   });
 
   it("adds a valid entry and records the verified actor", () => {
@@ -177,7 +185,7 @@ describe("music reducer", () => {
     expect(state.playing).toBe(false);
   });
 
-  it("skips to the next track and stops after the final track", () => {
+  it("skips to the next track and stops after the final track when looping is off", () => {
     const queued = {
       ...initialState({ videoId: first }),
       queue: [first, second],
@@ -190,6 +198,47 @@ describe("music reducer", () => {
     const ended = update(next, { action: "skip" });
     expect(ended.currentIndex).toBeNull();
     expect(ended.playing).toBe(false);
+  });
+
+  it("restarts or wraps the final track when the selected loop mode requires it", () => {
+    const last = {
+      ...initialState({ videoId: first }),
+      queue: [first, second],
+      currentIndex: 1,
+      playing: true,
+      position: 42,
+    };
+    const trackLoop = update({ ...last, loop: "track" }, { action: "skip" });
+    expect(trackLoop.currentIndex).toBe(1);
+    expect(trackLoop.position).toBe(0);
+    expect(trackLoop.playing).toBe(true);
+
+    const queueLoop = update({ ...last, loop: "queue" }, { action: "skip" });
+    expect(queueLoop.currentIndex).toBe(0);
+    expect(queueLoop.position).toBe(0);
+    expect(queueLoop.playing).toBe(true);
+  });
+
+  it("goes to the previous track and respects queue and track looping", () => {
+    const secondTrack = {
+      ...initialState({ videoId: first }),
+      queue: [first, second],
+      currentIndex: 1,
+      playing: true,
+      position: 42,
+    };
+    const previous = update(secondTrack, { action: "previous" });
+    expect(previous.currentIndex).toBe(0);
+    expect(previous.position).toBe(0);
+
+    const firstTrack = { ...secondTrack, currentIndex: 0 };
+    const queueLoop = update({ ...firstTrack, loop: "queue" }, { action: "previous" });
+    expect(queueLoop.currentIndex).toBe(1);
+    expect(queueLoop.position).toBe(0);
+
+    const trackLoop = update({ ...firstTrack, loop: "track" }, { action: "previous" });
+    expect(trackLoop.currentIndex).toBe(0);
+    expect(trackLoop.position).toBe(0);
   });
 
   it("persists valid playback intent and rejects invalid positions", () => {
@@ -238,6 +287,17 @@ describe("music reducer", () => {
     const closed = update(party, { action: "host-left" }, member);
     expect(closed.closed).toBe(true);
     expect(closed.playing).toBe(false);
+  });
+
+  it("starts playback when a playlist resolves its first entry", () => {
+    const state = update(
+      initialState({ playlistId: "PL1234567890", ownerDid: "did:Host" }),
+      { action: "resolve-playlist", playlistId: "PL1234567890", videoIds: [first], done: true },
+      "Host"
+    );
+    expect(state.currentIndex).toBe(0);
+    expect(state.position).toBe(0);
+    expect(state.playing).toBe(true);
   });
 
   it("loops a track or queue when an ended update targets the current item", () => {
@@ -350,5 +410,83 @@ describe("syncResponder", () => {
     members.delete("did:Owner");
     const withoutOwner = { ...s, members } as MusicState;
     expect(syncResponder(withoutOwner)).toBe("did:Bob");
+  });
+});
+
+describe("join synchronization", () => {
+  it("accepts a host sync at the live position", () => {
+    let state = initialState({ videoId: first, ownerDid: "did:Host" });
+    state = update(state, { action: "join" }, "Host");
+    state = update(state, { action: "join" }, "Bruno");
+    const synced = update(state, { action: "sync", index: 0, position: 42, playing: true }, "Host");
+    expect(synced.position).toBe(42);
+    expect(synced.playing).toBe(true);
+  });
+
+  it("accepts the fallback responder but not another listener", () => {
+    let state = initialState({ videoId: first, ownerDid: "did:Host" });
+    state = update(state, { action: "join" }, "Host");
+    state = update(state, { action: "join" }, "Bob");
+    state = update(state, { action: "join" }, "Carol");
+    state = { ...state, members: new Map([["did:Bob", "Bob"], ["did:Carol", "Carol"]]) };
+    expect(update(state, { action: "sync", index: 0, position: 33, playing: true }, "Bob").position).toBe(33);
+    expect(update(state, { action: "sync", index: 0, position: 99, playing: true }, "Carol")).toBe(state);
+  });
+
+  it("tracks an authenticated resync request and its targeted host response", () => {
+    let state = initialState({ videoId: first, ownerDid: "did:Host" });
+    state = update(state, { action: "join" }, "Host");
+    state = update(state, { action: "join" }, "Bruno");
+    state = update(
+      state,
+      {
+        action: "resync",
+        requestId: "request-123",
+        requesterDid: "did:Bruno",
+      },
+      "Bruno"
+    );
+    expect(state.syncRequest).toEqual({
+      id: "request-123",
+      requesterDid: "did:Bruno",
+    });
+
+    state = update(
+      state,
+      {
+        action: "sync",
+        index: 0,
+        position: 91,
+        duration: 205,
+        playing: true,
+        requestId: "request-123",
+        targetDid: "did:Bruno",
+      },
+      "Host"
+    );
+    expect(state.position).toBe(91);
+    expect(state.syncRequest).toBeUndefined();
+    expect(state.syncResponse).toEqual({
+      id: "request-123",
+      targetDid: "did:Bruno",
+      duration: 205,
+    });
+  });
+
+  it("rejects a resync request that impersonates another member", () => {
+    let state = initialState({ videoId: first, ownerDid: "did:Host" });
+    state = update(state, { action: "join" }, "Host");
+    state = update(state, { action: "join" }, "Bruno");
+    expect(
+      update(
+        state,
+        {
+          action: "resync",
+          requestId: "request-123",
+          requesterDid: "did:Host",
+        },
+        "Bruno"
+      )
+    ).toBe(state);
   });
 });

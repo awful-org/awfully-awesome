@@ -5,6 +5,25 @@
  * both components live in this plugin's graph.
  */
 export const tilePresence = $state({ count: 0 });
+export const livePositionState = $state({
+  position: 0,
+  playing: false,
+  published: false,
+});
+export const liveDurationState = $state({ duration: 0 });
+
+export function publishLivePosition(position: number, playing: boolean): void {
+  if (Number.isFinite(position) && position >= 0) {
+    livePositionState.position = position;
+    livePositionState.playing = playing;
+    livePositionState.published = true;
+  }
+}
+
+export function publishLiveDuration(duration: number): void {
+  if (Number.isFinite(duration) && duration >= 0)
+    liveDurationState.duration = duration;
+}
 
 /**
  * Whichever surface currently renders the player registers a live position
@@ -22,11 +41,14 @@ export function registerPositionSource(fn: () => number): () => void {
 }
 
 export function livePosition(fallback: number): number {
+  // Keep consumers reactive while the renderer publishes once per second.
+  livePositionState.position;
   try {
     const p = _positionSource?.();
-    return typeof p === "number" && Number.isFinite(p) ? p : fallback;
+    if (typeof p === "number" && Number.isFinite(p)) return p;
+    return livePositionState.published ? livePositionState.position : fallback;
   } catch {
-    return fallback;
+    return livePositionState.published ? livePositionState.position : fallback;
   }
 }
 
@@ -36,18 +58,125 @@ export function livePosition(fallback: number): number {
  * from the STALE last-synced state.position - picks it up and re-syncs the
  * party. Consumed once, fresh only.
  */
-let _handoff: { position: number; playing: boolean; at: number } | null = null;
+export interface RendererHandoff {
+  token: number;
+  position: number;
+  duration: number;
+  playing: boolean;
+  at: number;
+}
 
-export function parkHandoff(position: number, playing: boolean): void {
+export function handoffIsReadyToRelease(
+  playerLoading: boolean,
+  observedPosition: number,
+  expectedPosition: number,
+  duration: number
+): boolean {
+  return (
+    !playerLoading &&
+    Number.isFinite(observedPosition) &&
+    Number.isFinite(expectedPosition) &&
+    Number.isFinite(duration) &&
+    duration > 0 &&
+    Math.abs(observedPosition - expectedPosition) <= 3
+  );
+}
+
+let _handoff: (RendererHandoff & { videoId: string }) | null = null;
+let _handoffToken = 0;
+
+export function peekHandoff(videoId?: string): RendererHandoff | null {
+  const h = _handoff;
+  if (!h || (videoId && h.videoId !== videoId) || Date.now() - h.at > 15_000)
+    return null;
+  const elapsed = h.playing ? (Date.now() - h.at) / 1000 : 0;
+  return {
+    token: h.token,
+    position: h.position + elapsed,
+    duration: h.duration,
+    playing: h.playing,
+    // position already includes elapsed time up to this read; consumers use
+    // this timestamp as the new clock origin and must not add it twice.
+    at: Date.now(),
+  };
+}
+
+export function parkHandoff(
+  videoId: string,
+  position: number,
+  duration: number,
+  playing: boolean
+): void {
   if (Number.isFinite(position) && position > 0) {
-    _handoff = { position, playing, at: Date.now() };
+    _handoff = {
+      videoId,
+      token: ++_handoffToken,
+      position,
+      duration: Number.isFinite(duration) && duration > 0 ? duration : 0,
+      playing,
+      at: Date.now(),
+    };
   }
 }
 
-export function takeHandoff(): { position: number; playing: boolean } | null {
-  const h = _handoff;
+export function takeHandoff(videoId?: string): RendererHandoff | null {
+  const h = peekHandoff(videoId);
   _handoff = null;
-  if (!h || Date.now() - h.at > 15_000) return null;
-  const elapsed = h.playing ? (Date.now() - h.at) / 1000 : 0;
-  return { position: h.position + elapsed, playing: h.playing };
+  return h;
+}
+
+export function takeRendererPosition(
+  videoId: string,
+  fallback: number
+): number {
+  return takeHandoff(videoId)?.position ?? livePosition(fallback);
+}
+
+export type RendererSyncUpdate =
+  | { action: "seek"; position: number }
+  | { action: "resync"; requestId: string; requesterDid: string };
+
+export function rendererSyncUpdate(
+  selfDid: string,
+  ownerDid: string,
+  position: number,
+  requestId: string
+): RendererSyncUpdate {
+  return selfDid === ownerDid
+    ? { action: "seek", position: Math.floor(position) }
+    : { action: "resync", requestId, requesterDid: selfDid };
+}
+
+export function takeLiveRendererControl(
+  videoId: string,
+  fallback: number,
+  selfDid: string,
+  ownerDid: string,
+  requestId: string
+): { position: number; update: RendererSyncUpdate } {
+  const position = takeRendererPosition(videoId, fallback);
+  return {
+    position,
+    update: rendererSyncUpdate(selfDid, ownerDid, position, requestId),
+  };
+}
+
+export function takeParkedRendererControl(
+  videoId: string,
+  selfDid: string,
+  ownerDid: string,
+  requestId: string
+): { handoff: RendererHandoff; update: RendererSyncUpdate } | null {
+  const handoff = takeHandoff(videoId);
+  return handoff
+    ? {
+        handoff,
+        update: rendererSyncUpdate(
+          selfDid,
+          ownerDid,
+          handoff.position,
+          requestId
+        ),
+      }
+    : null;
 }

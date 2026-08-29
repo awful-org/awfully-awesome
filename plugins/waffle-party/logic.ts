@@ -5,6 +5,7 @@ export type ActivityAction =
   | "added a playlist"
   | "removed"
   | "skipped"
+  | "went to the previous track"
   | "played"
   | "paused"
   | "seeked"
@@ -12,6 +13,7 @@ export type ActivityAction =
   | "closed"
   | "host left"
   | "joined"
+  | "sync requested"
   | "left";
 
 export interface Activity {
@@ -35,6 +37,8 @@ export interface MusicState {
   ownerDid: string;
   members: Map<string, string>;
   playlistRequests: string[];
+  syncRequest?: { id: string; requesterDid: string };
+  syncResponse?: { id: string; targetDid: string; duration: number };
 }
 
 const VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
@@ -106,6 +110,19 @@ export function initialState(cardData: unknown): MusicState {
     ownerDid?: unknown;
   } | null;
   const videoId = validVideoId(data?.videoId) ? data.videoId : null;
+  const suppliedQueue = Array.isArray(data?.queue)
+    ? data.queue.filter(validVideoId)
+    : [];
+  const queue = suppliedQueue.length ? suppliedQueue : videoId ? [videoId] : [];
+  const currentIndex =
+    typeof data?.currentIndex === "number" &&
+    Number.isInteger(data.currentIndex) &&
+    data.currentIndex >= 0 &&
+    data.currentIndex < queue.length
+      ? data.currentIndex
+      : queue.length
+        ? 0
+        : null;
   const playlistId =
     typeof data?.playlistId === "string" &&
     /^[A-Za-z0-9_-]{10,128}$/.test(data.playlistId)
@@ -113,9 +130,9 @@ export function initialState(cardData: unknown): MusicState {
       : null;
   const ownerDid = typeof data?.ownerDid === "string" ? data.ownerDid : "";
   return {
-    queue: videoId ? [videoId] : [],
-    currentIndex: videoId ? 0 : null,
-    playing: false,
+    queue,
+    currentIndex,
+    playing: currentIndex !== null,
     position: 0,
     activity: [],
     activitySeq: 0,
@@ -170,6 +187,28 @@ function withActivity(
   return { ...state, activity, activitySeq: state.activitySeq + 1 };
 }
 
+function nextTrack(music: MusicState): MusicState {
+  if (music.currentIndex === null) return music;
+  if (music.loop === "track") return { ...music, position: 0 };
+  const next = music.currentIndex + 1;
+  if (next < music.queue.length)
+    return { ...music, currentIndex: next, position: 0 };
+  return music.loop === "queue" && music.queue.length
+    ? { ...music, currentIndex: 0, position: 0 }
+    : { ...music, currentIndex: null, playing: false, position: 0 };
+}
+
+function previousTrack(music: MusicState): MusicState {
+  if (music.currentIndex === null) return music;
+  if (music.loop === "track") return { ...music, position: 0 };
+  const previous = music.currentIndex - 1;
+  if (previous >= 0)
+    return { ...music, currentIndex: previous, position: 0 };
+  return music.loop === "queue" && music.queue.length
+    ? { ...music, currentIndex: music.queue.length - 1, position: 0 }
+    : { ...music, position: 0 };
+}
+
 export function reduce(
   state: unknown,
   update: { data: unknown },
@@ -190,8 +229,11 @@ export function reduce(
             "closed",
             null
           );
-    case "host-left":
-      return !music.members.has(ctx.senderDid)
+    case "host-left": {
+      const observers = [...music.members.keys()].filter(
+        (did) => did !== music.ownerDid
+      );
+      return !music.members.has(ctx.senderDid) || observers[0] !== ctx.senderDid
         ? music
         : withActivity(
             { ...music, playing: false, closed: true },
@@ -199,11 +241,34 @@ export function reduce(
             "host left",
             null
           );
+    }
     case "join": {
       if (music.members.has(ctx.senderDid)) return music;
       const members = new Map(music.members);
       members.set(ctx.senderDid, ctx.senderName);
       return withActivity({ ...music, members }, ctx, "joined", null);
+    }
+    case "resync": {
+      if (
+        !music.members.has(ctx.senderDid) ||
+        typeof data.requestId !== "string" ||
+        data.requestId.length < 8 ||
+        data.requestId.length > 128 ||
+        data.requesterDid !== ctx.senderDid
+      )
+        return music;
+      return withActivity(
+        {
+          ...music,
+          syncRequest: {
+            id: data.requestId,
+            requesterDid: ctx.senderDid,
+          },
+        },
+        ctx,
+        "sync requested",
+        music.currentIndex === null ? null : music.queue[music.currentIndex]
+      );
     }
     case "leave": {
       if (!music.members.has(ctx.senderDid) || ctx.senderDid === music.ownerDid)
@@ -226,17 +291,30 @@ export function reduce(
     }
     case "sync": {
       if (
-        ctx.senderDid !== music.ownerDid ||
+        ctx.senderDid !== syncResponder(music) ||
         !validIndex(data.index, music.queue) ||
         !validPosition(data.position) ||
-        typeof data.playing !== "boolean"
+        typeof data.playing !== "boolean" ||
+        (data.duration !== undefined && !validPosition(data.duration))
       )
         return music;
+      const targeted =
+        typeof data.requestId === "string" &&
+        typeof data.targetDid === "string"
+          ? {
+              id: data.requestId,
+              targetDid: data.targetDid,
+              duration:
+                typeof data.duration === "number" ? data.duration : 0,
+            }
+          : undefined;
       return {
         ...music,
         currentIndex: data.index,
         position: data.position,
         playing: data.playing,
+        syncRequest: targeted ? undefined : music.syncRequest,
+        syncResponse: targeted,
       };
     }
     default:
@@ -295,6 +373,10 @@ export function reduce(
           music.currentIndex === null && videoIds.length
             ? music.queue.length
             : music.currentIndex,
+        playing:
+          music.currentIndex === null && videoIds.length
+            ? true
+            : music.playing,
       };
     }
     case "select": {
@@ -314,13 +396,7 @@ export function reduce(
     case "ended": {
       if (data.index !== music.currentIndex || music.currentIndex === null)
         return music;
-      if (music.loop === "track") return { ...music, position: 0 };
-      const next = music.currentIndex + 1;
-      if (next < music.queue.length)
-        return { ...music, currentIndex: next, position: 0 };
-      return music.loop === "queue" && music.queue.length
-        ? { ...music, currentIndex: 0, position: 0 }
-        : { ...music, currentIndex: null, playing: false, position: 0 };
+      return nextTrack(music);
     }
     case "add": {
       if (!validVideoId(data.videoId) || music.queue.length >= QUEUE_CAP)
@@ -359,13 +435,15 @@ export function reduce(
     case "skip": {
       if (music.currentIndex === null) return music;
       const videoId = music.queue[music.currentIndex] ?? null;
-      const currentIndex = music.currentIndex + 1;
+      return withActivity(nextTrack(music), ctx, "skipped", videoId);
+    }
+    case "previous": {
+      if (music.currentIndex === null) return music;
+      const videoId = music.queue[music.currentIndex] ?? null;
       return withActivity(
-        currentIndex < music.queue.length
-          ? { ...music, currentIndex, position: 0 }
-          : { ...music, currentIndex: null, playing: false, position: 0 },
+        previousTrack(music),
         ctx,
-        "skipped",
+        "went to the previous track",
         videoId
       );
     }

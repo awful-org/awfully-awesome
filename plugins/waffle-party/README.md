@@ -14,13 +14,29 @@ Start a party with either URL type:
 ```
 
 Open the queue to add more video or playlist URLs. Party members can select a
-numbered track, remove it, skip, seek, pause/play, adjust the local volume, and
-choose looping for one track or the entire queue. The queue shows video titles
-and becomes scrollable after about ten tracks.
+numbered track, remove it, go to the previous or next track, seek, pause/play,
+adjust the local volume, and cycle looping between off, one track, and the
+entire queue. At the final track, next restarts it in track-loop mode and wraps
+to the first track in queue-loop mode. The queue shows video titles
+and becomes scrollable after about ten tracks. Playback and queue actions use
+the same icon controls as an in-call player; YouTube's embedded controls are
+intentionally blocked so only synchronized Waffle controls can affect a party.
 
 The host can disband the party. A participant may join only one Waffle Party in
-the same room at a time; refreshing or leaving removes that participant, while
-the host leaving closes the party.
+the same room at a time; refreshing or leaving removes that participant. If the
+host disconnects, members wait five seconds before closing the party and cancel
+that close if the host reconnects.
+
+Volume is a per-listener browser preference stored under
+`awful:plugin:waffle-party:audio_prefs`; it is never sent to the room. A new
+party starts playing when it has a selected track, and a listener joining an
+active party is synchronized to the live selected track, position, and playing
+state. Browser autoplay policy can still require that listener to press Play.
+
+After closing a populated party, its creator can use **Recruwuate party :3** on
+only their latest closed party in that room, provided they are not already in
+another active party. It opens a new party with the same queue and selected
+track, without carrying members or activity forward.
 
 ## Playlists
 

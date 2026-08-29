@@ -5,19 +5,27 @@
     Pause,
     SkipBack,
     SkipForward,
-    RotateCcw,
-    RotateCw,
+    LogIn,
     Volume2,
   } from "@lucide/svelte";
   import type { HostApi } from "$lib/plugins/api";
   import type { Message } from "$lib/transport/transport.svelte";
   import WafflePlayer from "./WafflePlayer.svelte";
-  import { syncResponder, type MusicState } from "./logic";
+  import { type MusicState } from "./logic";
   import {
     tilePresence,
+    publishLiveDuration,
+    publishLivePosition,
     registerPositionSource,
     parkHandoff,
+    handoffIsReadyToRelease,
+    takeLiveRendererControl,
   } from "./tile-presence.svelte";
+  import {
+    audioVolume,
+    initializeAudioVolume,
+    setAudioVolume,
+  } from "./audio-volume.svelte";
   import { cachedTitle, fetchTitle } from "./titles";
 
   interface Props {
@@ -48,11 +56,73 @@
     autoJoined = true;
     void send({ action: "join" });
   });
-  let volume = $state(100);
+  const volume = $derived(audioVolume.value);
   let localPosition = $state(0);
   let duration = $state(0);
   let seeking = $state(false);
   let seekValue = $state(0);
+  let playerLoading = $state(true);
+  let activeResyncId = $state<string | null>(null);
+  // Consume a parked card position only once when this renderer takes over.
+  // Keeping peekHandoff() in the player prop would pin the iframe to the
+  // parked timestamp and prevent later shared seek actions from reaching it.
+  let handoffPosition = $state<number | null>(null);
+  let handoffConsumed = $state(false);
+  let handoffVideo = $state<string | null>(current);
+  $effect(() => {
+    if (current === handoffVideo) return;
+    handoffVideo = current;
+    handoffPosition = null;
+    playerLoading = true;
+    activeResyncId = null;
+  });
+  $effect(() => {
+    if (!joined || !current) {
+      handoffConsumed = false;
+      return;
+    }
+    if (handoffConsumed) return;
+    handoffConsumed = true;
+    // Capture the card's live source BEFORE this tile increments presence and
+    // makes the card stand down. Waiting even one microtask can miss that
+    // source on the second chat -> tile transition.
+    const requestId = selfDid === music.ownerDid ? "" : crypto.randomUUID();
+    const takeover = takeLiveRendererControl(
+      current,
+      music.position,
+      selfDid,
+      music.ownerDid,
+      requestId
+    );
+    playerLoading = true;
+    handoffPosition = takeover.position;
+    // Every renderer switch gets an authoritative network position too. The
+    // owner publishes its captured time; listeners ask the owner to answer.
+    if (takeover.update.action === "resync") activeResyncId = requestId;
+    void send(takeover.update);
+    syncedJoinCount = music.activitySeq;
+  });
+  $effect(() => {
+    const response = music.syncResponse;
+    if (
+      !response ||
+      response.targetDid !== selfDid ||
+      response.id !== activeResyncId
+    )
+      return;
+    activeResyncId = null;
+    handoffPosition = music.position;
+    if (response.duration > 0) {
+      duration = response.duration;
+      publishLiveDuration(response.duration);
+    }
+  });
+  $effect(() => {
+    void initializeAudioVolume(host.storage);
+  });
+  function setVolume(value: number) {
+    setAudioVolume(host.storage, value);
+  }
 
   // While this tile exists, it IS the party's renderer: the chat card
   // mounts no player, shows "Rendering in the call", and skips its
@@ -71,7 +141,9 @@
       // Leaving the call: hand the live position to whichever surface
       // renders next, or the party restarts from the stale synced state.
       parkHandoff(
+        current,
         player ? player.currentTime() : localPosition,
+        duration,
         untrack(() => music.playing)
       );
       unregister();
@@ -113,21 +185,30 @@
   // stands down while the tile renders: when someone joins, ship them the
   // authoritative position.
   let syncedJoinCount = 0;
+  let syncedRequestId = "";
   $effect(() => {
     const latest = music.activity.at(-1);
+    const request = music.syncRequest;
+    const joinedNeedsSync =
+      latest?.action === "joined" && music.activitySeq !== syncedJoinCount;
+    const requestNeedsSync = !!request && request.id !== syncedRequestId;
     if (
-      selfDid !== syncResponder(music) ||
-      latest?.action !== "joined" ||
-      music.activitySeq === syncedJoinCount ||
+      selfDid !== music.ownerDid ||
+      (!joinedNeedsSync && !requestNeedsSync) ||
       music.currentIndex === null
     )
       return;
     syncedJoinCount = music.activitySeq;
+    if (request) syncedRequestId = request.id;
     void send({
       action: "sync",
       index: music.currentIndex,
       position: player?.currentTime() ?? localPosition,
       playing: music.playing,
+      duration,
+      ...(request
+        ? { requestId: request.id, targetDid: request.requesterDid }
+        : {}),
     });
   });
 
@@ -148,15 +229,8 @@
     await send({ action: "skip" });
   }
 
-  /** Standard player back button: mid-track restarts the song, near the
-   *  start jumps to the previous one (via the reducer's select action). */
   async function previous() {
-    const pos = player?.currentTime() ?? seekValue;
-    if (pos > 3 || music.currentIndex === null || music.currentIndex === 0) {
-      await seekTo(0);
-    } else {
-      await send({ action: "select", index: music.currentIndex - 1 });
-    }
+    await send({ action: "previous" });
   }
 
   async function seekTo(position: number) {
@@ -185,9 +259,11 @@
           e.stopPropagation();
           void send({ action: "join" });
         }}
-        class="pointer-events-auto cursor-pointer rounded-full border border-border bg-background/95 px-4 py-2 font-mono text-xs text-foreground shadow-sm hover:border-primary/60"
+        aria-label="Join party"
+        title="Join party"
+        class="pointer-events-auto cursor-pointer rounded-full border border-border bg-background/95 p-2 text-foreground shadow-sm hover:border-primary/60"
       >
-        Join the party ({music.members.size} listening)
+        <LogIn class="size-4" />
       </button>
     </div>
   {:else if current}
@@ -196,14 +272,31 @@
         bind:this={player}
         videoId={current}
         playing={music.playing}
-        position={music.position}
+        position={handoffPosition ?? music.position}
         {volume}
         controls={false}
         onPosition={(p) => {
           localPosition = p;
+          publishLivePosition(p, music.playing);
           if (!seeking) seekValue = p;
+          if (
+            handoffPosition !== null &&
+            handoffIsReadyToRelease(
+              playerLoading,
+              p,
+              handoffPosition,
+              duration
+            )
+          )
+            handoffPosition = null;
         }}
-        onDuration={(d) => (duration = d)}
+        onDuration={(d) => {
+          duration = d;
+          publishLiveDuration(d);
+        }}
+        onReady={() => (playerLoading = false)}
+        onPlayable={() => (playerLoading = false)}
+        onError={() => (playerLoading = false)}
         onEnded={ended}
       />
     </div>
@@ -222,6 +315,7 @@
         void togglePlayback();
       }}
       aria-label={music.playing ? "Pause for everyone" : "Play for everyone"}
+      title={music.playing ? "Pause for everyone" : "Play for everyone"}
       class="absolute left-1/2 top-1/2 z-20 grid size-14 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full bg-black/60 text-white opacity-0 transition-opacity {chromeVisible
         ? 'pointer-events-auto hover:opacity-100 focus-visible:opacity-100'
         : 'pointer-events-none'}"
@@ -260,17 +354,9 @@
       <div class="flex items-center gap-1.5">
         <button
           type="button"
-          onclick={() =>
-            seekTo(Math.max(0, (player?.currentTime() ?? seekValue) - 10))}
-          aria-label="Back 10 seconds"
-          class="cursor-pointer rounded bg-white/10 p-1.5 text-white hover:bg-white/20"
-        >
-          <RotateCcw class="size-3.5" />
-        </button>
-        <button
-          type="button"
           onclick={previous}
           aria-label="Previous track"
+          title="Previous track"
           class="cursor-pointer rounded bg-white/10 p-1.5 text-white hover:bg-white/20"
         >
           <SkipBack class="size-3.5" />
@@ -279,6 +365,7 @@
           type="button"
           onclick={togglePlayback}
           aria-label={music.playing ? "Pause for everyone" : "Play for everyone"}
+          title={music.playing ? "Pause for everyone" : "Play for everyone"}
           class="cursor-pointer rounded bg-white/15 p-1.5 text-white hover:bg-white/25"
         >
           {#if music.playing}<Pause class="size-3.5" />{:else}<Play
@@ -289,17 +376,10 @@
           type="button"
           onclick={skip}
           aria-label="Next track"
+          title="Next track"
           class="cursor-pointer rounded bg-white/10 p-1.5 text-white hover:bg-white/20"
         >
           <SkipForward class="size-3.5" />
-        </button>
-        <button
-          type="button"
-          onclick={() => seekTo((player?.currentTime() ?? seekValue) + 10)}
-          aria-label="Forward 10 seconds"
-          class="cursor-pointer rounded bg-white/10 p-1.5 text-white hover:bg-white/20"
-        >
-          <RotateCw class="size-3.5" />
         </button>
         <span class="font-mono text-[10px] text-white/70">
           {fmt(seekValue)} / {fmt(duration)}
@@ -310,7 +390,8 @@
             type="range"
             min="0"
             max="100"
-            bind:value={volume}
+            value={volume}
+            oninput={(event) => setVolume(Number(event.currentTarget.value))}
             aria-label="Volume (only you)"
             class="h-1 w-20 cursor-pointer accent-white"
           />
