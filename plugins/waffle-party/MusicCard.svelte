@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import {
     CircleOff,
     List,
@@ -14,6 +14,7 @@
   } from "@lucide/svelte";
   import type { HostApi } from "$lib/plugins/api";
   import type { Message } from "$lib/transport/transport.svelte";
+  import { Tip } from "$lib/plugins/ui";
   import WafflePlayer from "./WafflePlayer.svelte";
   import LoopButton, { queueButtonClass } from "./LoopButton.svelte";
   import {
@@ -73,13 +74,16 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   let queueOpen = $state(false);
   let url = $state("");
   let error = $state("");
-  let player: WafflePlayer | null = null;
-  let localPosition = $state(music.position);
+  let player = $state<WafflePlayer | null>(null);
+  // Seeded from the shared position, then owned locally (the scrubber and
+  // the renderer handoff both write it), so this must NOT track music.
+  let localPosition = $state(untrack(() => music.position));
   let transition = $state<RendererHandoff | null>(null);
   let transitionNow = $state(Date.now());
   let activeResyncId = $state<string | null>(null);
   let duration = $state(0);
-  let seekValue = $state(music.position);
+  // Seeded once; the slider owns it from then on.
+  let seekValue = $state(untrack(() => music.position));
   let seeking = $state(false);
   let syncedJoinCount = 0;
   let syncedRequestId = "";
@@ -87,7 +91,9 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   const volume = $derived(audioVolume.value);
   let pending = $state<string | null>(null);
   let playerLoading = $state(true);
-  let selfDid = $state(host.selfDid());
+  // Re-read on reconnect below, so it stays $state - it just must not
+  // capture host reactively here.
+  let selfDid = $state(untrack(() => host.selfDid()));
   const mountedAt = Date.now();
   let departureSent = false;
   let canRecreate = $state(false);
@@ -516,14 +522,17 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   </div>
   {#if music.closed}<p class="py-8 text-center text-sm text-muted-foreground">
       The party is over.. heh..~
-    </p>{#if canRecreate}<button
-        type="button"
-        class="mx-auto block rounded bg-muted/70 px-3 py-2 text-xs text-foreground hover:bg-muted"
-        onclick={recreate}
-        aria-label="Recruwuate party :3"
-        title="Recruwuate party :3"
-      >Recruwuate party :3</button
-    >{/if}{:else if joined && (current || pendingPlaylist)}<div class="space-y-1">
+    </p>{#if canRecreate}<Tip text="Start a new party with the same queue">
+      {#snippet children(props)}
+        <button
+          type="button"
+          {...props}
+          class="mx-auto block rounded bg-muted/70 px-3 py-2 text-xs text-foreground hover:bg-muted"
+          onclick={recreate}
+          aria-label="Start a new party with the same queue"
+        >Start again</button>
+      {/snippet}
+    </Tip>{/if}{:else if joined && (current || pendingPlaylist)}<div class="space-y-1">
       {#if tilePresence.count > 0}
         <!-- ONE renderer at a time: while the call tile plays the party,
              this card is just a pointer to it. No second player, no muted
@@ -611,22 +620,37 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       <div class="space-y-2 text-xs">
         <div class="flex items-center gap-2">
           <div class="flex gap-2">
-          <button
-            class="rounded bg-primary px-3 py-2 text-primary-foreground disabled:opacity-60"
-            disabled={pending !== null}
-            onclick={togglePlayback} aria-label={music.playing ? "Pause" : "Play"} title={music.playing ? "Pause" : "Play"}>{#if music.playing}<Pause class="size-4" />{:else}<Play class="size-4" />{/if}</button
-          >
-          <button
-            class="rounded border border-border px-3 py-2 disabled:opacity-60"
-            disabled={pending !== null}
-            onclick={previous}
-            aria-label="Previous track" title="Previous track"><SkipBack class="size-4" /></button
-          >
-          <button
-            class="rounded border border-border px-3 py-2 disabled:opacity-60"
-            disabled={pending !== null}
-            onclick={() => send({ action: "skip" }, "Skipping…")} aria-label="Skip" title="Skip"><SkipForward class="size-4" /></button
-          >
+          <Tip text="Previous track">
+            {#snippet children(props)}
+              <button
+                {...props}
+                class="rounded border border-border px-3 py-2 disabled:opacity-60"
+                disabled={pending !== null}
+                onclick={previous}
+                aria-label="Previous track"><SkipBack class="size-4" /></button
+              >
+            {/snippet}
+          </Tip>
+          <Tip text={music.playing ? "Pause" : "Play"}>
+            {#snippet children(props)}
+              <button
+                {...props}
+                class="rounded bg-primary px-3 py-2 text-primary-foreground disabled:opacity-60"
+                disabled={pending !== null}
+                onclick={togglePlayback} aria-label={music.playing ? "Pause" : "Play"}>{#if music.playing}<Pause class="size-4" />{:else}<Play class="size-4" />{/if}</button
+              >
+            {/snippet}
+          </Tip>
+          <Tip text="Skip">
+            {#snippet children(props)}
+              <button
+                {...props}
+                class="rounded border border-border px-3 py-2 disabled:opacity-60"
+                disabled={pending !== null}
+                onclick={() => send({ action: "skip" }, "Skipping…")} aria-label="Skip"><SkipForward class="size-4" /></button
+              >
+            {/snippet}
+          </Tip>
           <button
             class="rounded border px-3 py-2 transition-colors {queueButtonClass(queueOpen)}"
             onclick={() => (queueOpen = !queueOpen)}
@@ -639,21 +663,29 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
           />
           </div>
           <div class="ml-auto flex gap-2">
-          {#if selfDid === music.ownerDid}<button
-              class="rounded border border-destructive px-3 py-2 text-destructive disabled:opacity-60"
-              disabled={pending !== null}
-              onclick={() => send({ action: "close" }, "Disbanding party…")}
-              aria-label="Disband party"
-              title="Disband party"
-              ><CircleOff class="size-4" /></button
-            >{:else}<button
-              class="rounded border border-border px-3 py-2 disabled:opacity-60"
-              disabled={pending !== null}
-              onclick={() => send({ action: "leave" }, "Leaving party…")}
-              aria-label="Leave party"
-              title="Leave party"
-              ><LogOut class="size-4" /></button
-            >{/if}
+          {#if selfDid === music.ownerDid}<Tip text="Disband party">
+              {#snippet children(props)}
+                <button
+                  {...props}
+                  class="rounded border border-destructive px-3 py-2 text-destructive disabled:opacity-60"
+                  disabled={pending !== null}
+                  onclick={() => send({ action: "close" }, "Disbanding party…")}
+                  aria-label="Disband party"
+                  ><CircleOff class="size-4" /></button
+                >
+              {/snippet}
+            </Tip>{:else}<Tip text="Leave party">
+              {#snippet children(props)}
+                <button
+                  {...props}
+                  class="rounded border border-border px-3 py-2 disabled:opacity-60"
+                  disabled={pending !== null}
+                  onclick={() => send({ action: "leave" }, "Leaving party…")}
+                  aria-label="Leave party"
+                  ><LogOut class="size-4" /></button
+                >
+              {/snippet}
+            </Tip>{/if}
           </div>
         </div>
         <label class="flex items-center gap-2"
@@ -676,13 +708,17 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
             disabled={pending !== null}
             bind:value={url}
             placeholder="YouTube video or playlist URL"
-          /><button
-            class="rounded border border-border px-2 text-xs disabled:opacity-60"
-            disabled={pending !== null}
-            onclick={add}
-            aria-label="Add to queue"
-            title="Add to queue"><Plus class="size-4" /></button
-          >
+          /><Tip text="Add to queue">
+            {#snippet children(props)}
+              <button
+                {...props}
+                class="rounded border border-border px-2 text-xs disabled:opacity-60"
+                disabled={pending !== null}
+                onclick={add}
+                aria-label="Add to queue"><Plus class="size-4" /></button
+              >
+            {/snippet}
+          </Tip>
         </div>
         {#if error}<p class="text-xs text-destructive">{error}</p>{/if}
         <div
@@ -698,24 +734,33 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
                 onclick={() =>
                   send({ action: "select", index }, "Changing track…")}
                 >#{index + 1} {titles[videoId] ?? "Loading title…"}</button
-              ><button
-                class="shrink-0 text-destructive disabled:opacity-60"
-                disabled={pending !== null}
-                onclick={() =>
-                  send({ action: "remove", index }, "Removing track…")}
-                aria-label="Remove track" title="Remove track"><Trash2 class="size-4" /></button
-              >
+              ><Tip text="Remove track">
+                {#snippet children(props)}
+                  <button
+                    {...props}
+                    class="shrink-0 text-destructive disabled:opacity-60"
+                    disabled={pending !== null}
+                    onclick={() =>
+                      send({ action: "remove", index }, "Removing track…")}
+                    aria-label="Remove track"><Trash2 class="size-4" /></button
+                  >
+                {/snippet}
+              </Tip>
             </div>{/each}
         </div>
       </div>
-    {/if}{/if}{#if !music.closed && !joined}<button
-      class="rounded bg-primary px-3 py-2 text-xs text-primary-foreground disabled:opacity-60"
-      disabled={pending !== null}
-      onclick={join}
-      aria-label="Join party"
-      title="Join party"
-      ><LogIn class="size-4" /></button
-    >{/if}
+    {/if}{/if}{#if !music.closed && !joined}<Tip text="Join party">
+      {#snippet children(props)}
+        <button
+          {...props}
+          class="rounded bg-primary px-3 py-2 text-xs text-primary-foreground disabled:opacity-60"
+          disabled={pending !== null}
+          onclick={join}
+          aria-label="Join party"
+          ><LogIn class="size-4" /></button
+        >
+      {/snippet}
+    </Tip>{/if}
   <div
     class="grid {music.closed
       ? 'grid-cols-1'

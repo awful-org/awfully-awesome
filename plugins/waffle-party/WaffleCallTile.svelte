@@ -10,6 +10,7 @@
   } from "@lucide/svelte";
   import type { HostApi } from "$lib/plugins/api";
   import type { Message } from "$lib/transport/transport.svelte";
+  import { Tip } from "$lib/plugins/ui";
   import WafflePlayer from "./WafflePlayer.svelte";
   import { type MusicState } from "./logic";
   import {
@@ -39,13 +40,13 @@
   let { card, cardState, host, chromeVisible = true }: Props = $props();
   const music = $derived(cardState as MusicState);
 
-  const selfDid = host.selfDid();
+  const selfDid = untrack(() => host.selfDid());
   const joined = $derived(music.members.has(selfDid));
   const current = $derived(
     music.currentIndex === null ? null : music.queue[music.currentIndex]
   );
 
-  let player: WafflePlayer | null = null;
+  let player = $state<WafflePlayer | null>(null);
 
   // This tile content only mounts after the user CLICKED the grid tile to
   // join it (click-to-join like screen shares) - that click is the intent,
@@ -68,7 +69,9 @@
   // parked timestamp and prevent later shared seek actions from reaching it.
   let handoffPosition = $state<number | null>(null);
   let handoffConsumed = $state(false);
-  let handoffVideo = $state<string | null>(current);
+  // Seeded from the current video; the effect below keeps it in step, so
+  // this initial read is deliberately untracked.
+  let handoffVideo = $state<string | null>(untrack(() => current));
   $effect(() => {
     if (current === handoffVideo) return;
     handoffVideo = current;
@@ -253,18 +256,22 @@
 <div class="group/tile relative flex h-full w-full flex-col bg-black">
   {#if !joined}
     <div class="grid h-full w-full place-items-center">
-      <button
-        type="button"
-        onclick={(e) => {
-          e.stopPropagation();
-          void send({ action: "join" });
-        }}
-        aria-label="Join party"
-        title="Join party"
-        class="pointer-events-auto cursor-pointer rounded-full border border-border bg-background/95 p-2 text-foreground shadow-sm hover:border-primary/60"
-      >
-        <LogIn class="size-4" />
-      </button>
+      <Tip text="Join party">
+        {#snippet children(props)}
+          <button
+            type="button"
+            {...props}
+            onclick={(e) => {
+              e.stopPropagation();
+              void send({ action: "join" });
+            }}
+            aria-label="Join party"
+            class="pointer-events-auto cursor-pointer rounded-full border border-border bg-background/95 p-2 text-foreground shadow-sm hover:border-primary/60"
+          >
+            <LogIn class="size-4" />
+          </button>
+        {/snippet}
+      </Tip>
     </div>
   {:else if current}
     <div class="waffle-tile-player absolute inset-0">
@@ -330,7 +337,8 @@
          opts them back in from the host's pass-through layer; the
          stopPropagation keeps a control click from doubling as the
          placeholder's click-to-primary. -->
-    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       onclick={(e) => e.stopPropagation()}
       class="absolute inset-x-0 bottom-0 z-20 flex flex-col gap-1 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2 pt-8 transition-opacity focus-within:opacity-100 {chromeVisible
@@ -352,15 +360,19 @@
         class="h-1 w-full cursor-pointer accent-white"
       />
       <div class="flex items-center gap-1.5">
-        <button
-          type="button"
-          onclick={previous}
-          aria-label="Previous track"
-          title="Previous track"
-          class="cursor-pointer rounded bg-white/10 p-1.5 text-white hover:bg-white/20"
-        >
-          <SkipBack class="size-3.5" />
-        </button>
+        <Tip text="Previous track">
+          {#snippet children(props)}
+            <button
+              type="button"
+              {...props}
+              onclick={previous}
+              aria-label="Previous track"
+              class="cursor-pointer rounded bg-white/10 p-1.5 text-white hover:bg-white/20"
+            >
+              <SkipBack class="size-3.5" />
+            </button>
+          {/snippet}
+        </Tip>
         <button
           type="button"
           onclick={togglePlayback}
@@ -372,15 +384,19 @@
               class="size-3.5"
             />{/if}
         </button>
-        <button
-          type="button"
-          onclick={skip}
-          aria-label="Next track"
-          title="Next track"
-          class="cursor-pointer rounded bg-white/10 p-1.5 text-white hover:bg-white/20"
-        >
-          <SkipForward class="size-3.5" />
-        </button>
+        <Tip text="Next track">
+          {#snippet children(props)}
+            <button
+              type="button"
+              {...props}
+              onclick={skip}
+              aria-label="Next track"
+              class="cursor-pointer rounded bg-white/10 p-1.5 text-white hover:bg-white/20"
+            >
+              <SkipForward class="size-3.5" />
+            </button>
+          {/snippet}
+        </Tip>
         <span class="font-mono text-[10px] text-white/70">
           {fmt(seekValue)} / {fmt(duration)}
         </span>

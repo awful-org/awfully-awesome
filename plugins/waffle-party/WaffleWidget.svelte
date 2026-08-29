@@ -4,6 +4,7 @@
   import type { HostApi } from "$lib/plugins/api";
   import type { Message } from "$lib/transport/transport.svelte";
   import type { MusicState } from "./logic";
+  import { Tip } from "$lib/plugins/ui";
   import { livePosition } from "./tile-presence.svelte";
   import { cachedTitle, fetchTitle } from "./titles";
 
@@ -70,15 +71,19 @@
   {#if music.closed}
     <span class="truncate text-xs text-muted-foreground">Party over</span>
   {:else if current}
-    <button
-      type="button"
-      onclick={previous}
-      aria-label="Previous track"
-      title="Previous track"
-      class="shrink-0 cursor-pointer rounded bg-primary/15 p-1 text-primary hover:bg-primary/25"
-    >
-      <SkipBack class="size-3" />
-    </button>
+    <Tip text="Previous track">
+      {#snippet children(props)}
+        <button
+          type="button"
+          {...props}
+          onclick={previous}
+          aria-label="Previous track"
+          class="shrink-0 cursor-pointer rounded bg-primary/15 p-1 text-primary hover:bg-primary/25"
+        >
+          <SkipBack class="size-3" />
+        </button>
+      {/snippet}
+    </Tip>
     <button
       type="button"
       onclick={() =>
@@ -96,15 +101,19 @@
           class="size-3"
         />{/if}
     </button>
-    <button
-      type="button"
-      onclick={() => send({ action: "skip" })}
-      aria-label="Next track"
-      title="Next track"
-      class="shrink-0 cursor-pointer rounded bg-primary/15 p-1 text-primary hover:bg-primary/25"
-    >
-      <SkipForward class="size-3" />
-    </button>
+    <Tip text="Next track">
+      {#snippet children(props)}
+        <button
+          type="button"
+          {...props}
+          onclick={() => send({ action: "skip" })}
+          aria-label="Next track"
+          class="shrink-0 cursor-pointer rounded bg-primary/15 p-1 text-primary hover:bg-primary/25"
+        >
+          <SkipForward class="size-3" />
+        </button>
+      {/snippet}
+    </Tip>
     <!-- The label stays put; only the NAME rides the marquee. -->
     <span
       class="flex min-w-0 flex-1 items-baseline gap-1 font-mono text-[11px] text-muted-foreground"
