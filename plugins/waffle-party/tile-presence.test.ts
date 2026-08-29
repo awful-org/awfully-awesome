@@ -15,6 +15,7 @@ import {
   publishLivePosition,
   publishLiveDuration,
   registerPositionSource,
+  rendererSyncUpdate,
   takeRendererPosition,
   takeHandoff,
 } from "./tile-presence.svelte";
@@ -73,6 +74,8 @@ describe("renderer handoff", () => {
     expect(handoffIsReadyToRelease(false, 120, 120, 0)).toBe(false);
     expect(handoffIsReadyToRelease(false, 0, 120, 205)).toBe(false);
     expect(handoffIsReadyToRelease(false, 122, 120, 205)).toBe(true);
+    expect(handoffIsReadyToRelease(false, 123, 120, 205)).toBe(true);
+    expect(handoffIsReadyToRelease(false, 123.001, 120, 205)).toBe(false);
   });
 
   it("hands a paused position over as-is, exactly once", () => {
@@ -131,5 +134,19 @@ describe("renderer handoff", () => {
     const second = registerPositionSource(() => 180);
     expect(takeRendererPosition("video", 0)).toBe(180);
     second();
+  });
+
+  it("requests authoritative synchronization on every owner or listener takeover", () => {
+    expect(rendererSyncUpdate("owner", "owner", 120.9, "unused")).toEqual({
+      action: "seek",
+      position: 120,
+    });
+    expect(rendererSyncUpdate("listener", "owner", 120.9, "request-1")).toEqual(
+      {
+        action: "resync",
+        requestId: "request-1",
+        requesterDid: "listener",
+      }
+    );
   });
 });

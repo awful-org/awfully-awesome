@@ -55,6 +55,7 @@
     parkHandoff,
     takeHandoff,
     handoffIsReadyToRelease,
+    rendererSyncUpdate,
     type RendererHandoff,
   } from "./tile-presence.svelte";
   import { cachedTitle, fetchTitle } from "./titles";
@@ -264,17 +265,16 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       // Suppress the join-sync effect that fires next: the handoff already
       // covers the auto-join activity the tile just created.
       syncedJoinCount = music.activitySeq;
-      if (selfDid === music.ownerDid && Math.abs(h.position - music.position) > 2)
-        void send({ action: "seek", position: Math.floor(h.position) });
-      else if (selfDid !== music.ownerDid) {
-        const requestId = crypto.randomUUID();
-        activeResyncId = requestId;
-        void send({
-          action: "resync",
-          requestId,
-          requesterDid: selfDid,
-        });
-      }
+      const requestId =
+        selfDid === music.ownerDid ? "" : crypto.randomUUID();
+      const update = rendererSyncUpdate(
+        selfDid,
+        music.ownerDid,
+        h.position,
+        requestId
+      );
+      if (update.action === "resync") activeResyncId = requestId;
+      void send(update);
     }
   });
 

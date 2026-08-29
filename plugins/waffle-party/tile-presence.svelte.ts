@@ -131,3 +131,18 @@ export function takeRendererPosition(
 ): number {
   return takeHandoff(videoId)?.position ?? livePosition(fallback);
 }
+
+export type RendererSyncUpdate =
+  | { action: "seek"; position: number }
+  | { action: "resync"; requestId: string; requesterDid: string };
+
+export function rendererSyncUpdate(
+  selfDid: string,
+  ownerDid: string,
+  position: number,
+  requestId: string
+): RendererSyncUpdate {
+  return selfDid === ownerDid
+    ? { action: "seek", position: Math.floor(position) }
+    : { action: "resync", requestId, requesterDid: selfDid };
+}

@@ -19,6 +19,7 @@
     registerPositionSource,
     parkHandoff,
     handoffIsReadyToRelease,
+    rendererSyncUpdate,
     takeRendererPosition,
   } from "./tile-presence.svelte";
   import {
@@ -91,17 +92,15 @@
     handoffPosition = takeoverPosition;
     // Every renderer switch gets an authoritative network position too. The
     // owner publishes its captured time; listeners ask the owner to answer.
-    if (selfDid === music.ownerDid)
-      void send({ action: "seek", position: Math.floor(takeoverPosition) });
-    else {
-      const requestId = crypto.randomUUID();
-      activeResyncId = requestId;
-      void send({
-        action: "resync",
-        requestId,
-        requesterDid: selfDid,
-      });
-    }
+    const requestId = selfDid === music.ownerDid ? "" : crypto.randomUUID();
+    const update = rendererSyncUpdate(
+      selfDid,
+      music.ownerDid,
+      takeoverPosition,
+      requestId
+    );
+    if (update.action === "resync") activeResyncId = requestId;
+    void send(update);
     syncedJoinCount = music.activitySeq;
   });
   $effect(() => {
