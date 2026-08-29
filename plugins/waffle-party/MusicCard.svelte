@@ -1,3 +1,27 @@
+<script module lang="ts">
+  export type LoopMode = "off" | "track" | "queue";
+
+  export function loopLabelFor(mode: LoopMode): string {
+    return mode === "off"
+      ? "Loop Off"
+      : mode === "track"
+        ? "Loop Track"
+        : "Loop Queue";
+  }
+
+  export function loopButtonClass(mode: LoopMode): string {
+    return mode === "off"
+      ? "border-border hover:bg-muted"
+      : "border-green-500/50 text-green-500 hover:bg-green-500/10";
+  }
+
+  export function queueButtonClass(open: boolean): string {
+    return open
+      ? "border-green-500/50 bg-green-500/10 text-green-500 hover:bg-green-500/20"
+      : "border-border hover:bg-muted";
+  }
+</script>
+
 <script lang="ts">
   import { onMount } from "svelte";
   import {
@@ -164,13 +188,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   const displayedPosition = $derived(seeking ? seekValue : rendererPosition);
   const joined = $derived(music.members.has(selfDid));
   const pendingPlaylist = $derived(music.playlistRequests[0] ?? null);
-  const loopLabel = $derived(
-    music.loop === "off"
-      ? "Loop Off"
-      : music.loop === "track"
-        ? "Loop Track"
-        : "Loop Queue"
-  );
+  const loopLabel = $derived(loopLabelFor(music.loop));
   const listeners = $derived(
     Array.from(music.members.entries()).map(([did, name]) =>
       did === music.ownerDid ? card.senderName : name
@@ -638,16 +656,12 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
             onclick={() => send({ action: "skip" }, "Skipping…")} aria-label="Skip" title="Skip"><SkipForward class="size-4" /></button
           >
           <button
-            class="rounded border px-3 py-2 transition-colors {queueOpen
-              ? 'border-green-500/50 bg-green-500/10 text-green-500 hover:bg-green-500/20'
-              : 'border-border hover:bg-muted'}"
+            class="rounded border px-3 py-2 transition-colors {queueButtonClass(queueOpen)}"
             onclick={() => (queueOpen = !queueOpen)}
             aria-label={queueOpen ? "Hide queue" : "Show queue"} title={queueOpen ? "Hide queue" : "Show queue"}><List class="size-4" /></button
           >
           <button
-            class="flex items-center gap-1 rounded border px-3 py-2 transition-colors disabled:opacity-60 {music.loop === 'off'
-              ? 'border-border hover:bg-muted'
-              : 'border-green-500/50 text-green-500 hover:bg-green-500/10'}"
+            class="flex items-center gap-1 rounded border px-3 py-2 transition-colors disabled:opacity-60 {loopButtonClass(music.loop)}"
             disabled={pending !== null}
             onclick={cycleLoop}
             aria-label={loopLabel}
