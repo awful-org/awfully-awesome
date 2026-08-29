@@ -651,11 +651,19 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
               >
             {/snippet}
           </Tip>
-          <button
-            class="rounded border px-3 py-2 transition-colors {queueButtonClass(queueOpen)}"
-            onclick={() => (queueOpen = !queueOpen)}
-            aria-label={queueOpen ? "Hide queue" : "Show queue"} title={queueOpen ? "Hide queue" : "Show queue"}><List class="size-4" /></button
-          >
+          <Tip text={queueOpen ? "Hide queue" : "Show queue"}>
+            {#snippet children(props)}
+              <button
+                {...props}
+                class="rounded border px-3 py-2 transition-colors {queueButtonClass(
+                  queueOpen
+                )}"
+                onclick={() => (queueOpen = !queueOpen)}
+                aria-label={queueOpen ? "Hide queue" : "Show queue"}
+                ><List class="size-4" /></button
+              >
+            {/snippet}
+          </Tip>
           <LoopButton
             mode={music.loop}
             disabled={pending !== null}

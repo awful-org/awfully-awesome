@@ -322,7 +322,6 @@
         void togglePlayback();
       }}
       aria-label={music.playing ? "Pause for everyone" : "Play for everyone"}
-      title={music.playing ? "Pause for everyone" : "Play for everyone"}
       class="absolute left-1/2 top-1/2 z-20 grid size-14 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full bg-black/60 text-white opacity-0 transition-opacity {chromeVisible
         ? 'pointer-events-auto hover:opacity-100 focus-visible:opacity-100'
         : 'pointer-events-none'}"
@@ -373,17 +372,25 @@
             </button>
           {/snippet}
         </Tip>
-        <button
-          type="button"
-          onclick={togglePlayback}
-          aria-label={music.playing ? "Pause for everyone" : "Play for everyone"}
-          title={music.playing ? "Pause for everyone" : "Play for everyone"}
-          class="cursor-pointer rounded bg-white/15 p-1.5 text-white hover:bg-white/25"
+        <Tip
+          text={music.playing ? "Pause for everyone" : "Play for everyone"}
         >
-          {#if music.playing}<Pause class="size-3.5" />{:else}<Play
-              class="size-3.5"
-            />{/if}
-        </button>
+          {#snippet children(props)}
+            <button
+              type="button"
+              {...props}
+              onclick={togglePlayback}
+              aria-label={music.playing
+                ? "Pause for everyone"
+                : "Play for everyone"}
+              class="cursor-pointer rounded bg-white/15 p-1.5 text-white hover:bg-white/25"
+            >
+              {#if music.playing}<Pause class="size-3.5" />{:else}<Play
+                  class="size-3.5"
+                />{/if}
+            </button>
+          {/snippet}
+        </Tip>
         <Tip text="Next track">
           {#snippet children(props)}
             <button

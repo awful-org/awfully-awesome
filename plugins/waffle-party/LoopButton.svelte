@@ -24,6 +24,7 @@
 
 <script lang="ts">
   import { Ban, ListMusic, Repeat1 } from "@lucide/svelte";
+  import { Tip } from "$lib/plugins/ui";
 
   interface Props {
     mode: LoopMode;
@@ -35,14 +36,22 @@
   const label = $derived(loopLabelFor(mode));
 </script>
 
-<button
-  class="flex items-center gap-1 rounded border px-3 py-2 transition-colors disabled:opacity-60 {loopButtonClass(mode)}"
-  {disabled}
-  {onclick}
-  aria-label={label}
-  title={label}
->
-  {#if mode === "off"}<Ban class="size-4" />{:else if mode === "track"}<Repeat1
-      class="size-4"
-    />{:else}<ListMusic class="size-4" />{/if}
-</button>
+<Tip text={label}>
+  {#snippet children(props)}
+    <button
+      {...props}
+      class="flex items-center gap-1 rounded border px-3 py-2 transition-colors disabled:opacity-60 {loopButtonClass(
+        mode
+      )}"
+      {disabled}
+      {onclick}
+      aria-label={label}
+    >
+      {#if mode === "off"}<Ban
+          class="size-4"
+        />{:else if mode === "track"}<Repeat1 class="size-4" />{:else}<ListMusic
+          class="size-4"
+        />{/if}
+    </button>
+  {/snippet}
+</Tip>

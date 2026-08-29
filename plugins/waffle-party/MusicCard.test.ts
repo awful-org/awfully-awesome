@@ -17,7 +17,10 @@ describe("party control states", () => {
       props: { mode, onclick: () => {} },
     });
     expect(body).toContain(`aria-label="${label}"`);
-    expect(body).toContain(`title="${label}"`);
+    // The app's tooltip, not the browser's. This used to assert the native
+    // `title` and so passed happily while the loop button was the last
+    // control still popping an unstyled OS tooltip in the middle of the app.
+    expect(body).not.toContain("title=");
   });
 
   it("keeps the off loop muted and active loops green", () => {

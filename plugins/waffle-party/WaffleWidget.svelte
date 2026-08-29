@@ -84,23 +84,27 @@
         </button>
       {/snippet}
     </Tip>
-    <button
-      type="button"
-      onclick={() =>
-        send({
-          action: music.playing ? "pause" : "play",
-          // The live player's position when one renders in this tab; the
-          // stale synced one rewound the whole party on pause otherwise.
-          position: livePosition(music.position),
-        })}
-      aria-label={music.playing ? "Pause" : "Play"}
-      title={music.playing ? "Pause" : "Play"}
-      class="shrink-0 cursor-pointer rounded bg-primary/15 p-1 text-primary hover:bg-primary/25"
-    >
-      {#if music.playing}<Pause class="size-3" />{:else}<Play
-          class="size-3"
-        />{/if}
-    </button>
+    <Tip text={music.playing ? "Pause" : "Play"}>
+      {#snippet children(props)}
+        <button
+          type="button"
+          {...props}
+          onclick={() =>
+            send({
+              action: music.playing ? "pause" : "play",
+              // The live player's position when one renders in this tab; the
+              // stale synced one rewound the whole party on pause otherwise.
+              position: livePosition(music.position),
+            })}
+          aria-label={music.playing ? "Pause" : "Play"}
+          class="shrink-0 cursor-pointer rounded bg-primary/15 p-1 text-primary hover:bg-primary/25"
+        >
+          {#if music.playing}<Pause class="size-3" />{:else}<Play
+              class="size-3"
+            />{/if}
+        </button>
+      {/snippet}
+    </Tip>
     <Tip text="Next track">
       {#snippet children(props)}
         <button
