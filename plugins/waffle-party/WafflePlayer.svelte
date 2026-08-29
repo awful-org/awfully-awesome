@@ -3,6 +3,7 @@
 </script>
 
 <script lang="ts">
+  import { Play } from "@lucide/svelte";
   import { onMount } from "svelte";
 
   interface Props {
@@ -45,6 +46,9 @@
     pauseVideo(): void;
     getCurrentTime(): number;
     getDuration(): number;
+    getPlayerState(): number;
+    mute(): void;
+    unMute(): void;
     setVolume(value: number): void;
     getIframe(): HTMLIFrameElement;
     destroy(): void;
@@ -72,6 +76,8 @@
   let ready = false;
   let loaded = "";
   let disposed = false;
+  let needsResumeClick = $state(false);
+  let resumeTimer: ReturnType<typeof window.setTimeout> | null = null;
   let reportedPlaylist = "";
   let playlistReporter: ReturnType<typeof window.setInterval> | null = null;
 
@@ -114,6 +120,36 @@
       : position;
   }
 
+  function clearResumeCheck() {
+    if (resumeTimer !== null) window.clearTimeout(resumeTimer);
+    resumeTimer = null;
+  }
+
+  function isPlayerPlaying(): boolean {
+    return (
+      typeof player?.getPlayerState === "function" &&
+      player.getPlayerState() === 1
+    );
+  }
+
+  function scheduleResumeCheck() {
+    clearResumeCheck();
+    resumeTimer = window.setTimeout(() => {
+      resumeTimer = null;
+      if (!disposed && playing && !isPlayerPlaying()) needsResumeClick = true;
+    }, 1_000);
+  }
+
+  function resumePlayback() {
+    if (!player) return;
+    needsResumeClick = false;
+    clearResumeCheck();
+    player.unMute();
+    player.setVolume(volume);
+    player.playVideo();
+    scheduleResumeCheck();
+  }
+
   function sync() {
     const next = `${videoId}:${playing}:${position}`;
     if (!player || !ready) return;
@@ -154,6 +190,7 @@
           ...(videoId ? { videoId } : {}),
           playerVars: {
             playsinline: 1,
+            mute: playing ? 1 : 0,
             controls: controls ? 1 : 0,
             // No fullscreen when our controls own the surface - the native
             // fullscreen UI would expose the unsynced YouTube controls.
@@ -169,7 +206,13 @@
                 player?.cuePlaylist({ listType: "playlist", list: playlistId });
                 playlistReporter = window.setInterval(reportPlaylist, 250);
                 reportPlaylist();
-              } else sync();
+              } else {
+                // A muted first play is permitted by autoplay policies that
+                // reject an unmuted play after a page refresh.
+                if (playing) player?.mute();
+                sync();
+                if (playing) scheduleResumeCheck();
+              }
               // Loading a new iframe can briefly leave YouTube paused even
               // though the shared party state is still playing. Re-assert
               // playback after the initial load without changing paused
@@ -184,6 +227,12 @@
             onStateChange: (event: { data: number }) => {
               if (event.data === 0) onEnded?.();
               if (event.data === 5) reportPlaylist();
+              if (event.data === 1 && playing) {
+                clearResumeCheck();
+                needsResumeClick = false;
+                player?.unMute();
+                player?.setVolume(volume);
+              }
               if (event.data === 2 && playing) {
                 // YouTube may pause once while an iframe is handed from the
                 // card to the call. The party state is authoritative, so
@@ -191,6 +240,7 @@
                 window.setTimeout(() => {
                   if (!disposed && playing) player?.playVideo();
                 }, 0);
+                scheduleResumeCheck();
               }
               if (event.data === 1 || event.data === 2 || event.data === 5)
                 onPlayable?.();
@@ -208,6 +258,7 @@
       });
     return () => {
       disposed = true;
+      clearResumeCheck();
       window.clearInterval(reporter);
       if (playlistReporter) window.clearInterval(playlistReporter);
       player?.destroy();
@@ -219,6 +270,12 @@
     position;
     volume;
     sync();
+    if (!playing) {
+      clearResumeCheck();
+      needsResumeClick = false;
+    } else if (ready && !isPlayerPlaying()) {
+      scheduleResumeCheck();
+    }
   });
 
   function reportPlaylist() {
@@ -249,5 +306,18 @@
   <!-- YouTube controls are local-only. This inert shield consumes pointer
        input while Waffle Party's own controls render above the component. -->
   <div class="absolute inset-0 z-10" aria-hidden="true"></div>
+  {#if needsResumeClick}
+    <button
+      type="button"
+      class="pointer-events-auto absolute inset-0 z-20 grid cursor-pointer place-items-center bg-black/20 text-white"
+      onclick={resumePlayback}
+      aria-label="Resume playback"
+      title="Resume playback"
+    >
+      <span class="grid size-14 place-items-center rounded-full bg-black/70 shadow-lg">
+        <Play class="size-7 fill-current" />
+      </span>
+    </button>
+  {/if}
   {#if error}<p class="text-xs text-destructive">{error}</p>{/if}
 </div>
