@@ -163,9 +163,10 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   const joined = $derived(music.members.has(selfDid));
   const pendingPlaylist = $derived(music.playlistRequests[0] ?? null);
   const listeners = $derived(
-    Array.from(music.members.entries()).map(([did, name]) =>
-      did === music.ownerDid ? card.senderName : name
-    )
+    Array.from(music.members.entries()).map(([did, name]) => ({
+      did,
+      name: did === music.ownerDid ? card.senderName : name,
+    }))
   );
 
   $effect(() => {
@@ -735,8 +736,8 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     </div>
     {#if !music.closed}<div>
         <div class="mb-1 font-medium text-card-foreground">Party members</div>
-        {#each listeners as listener (listener)}<div class="truncate">
-            {listener}
+        {#each listeners as listener (listener.did)}<div class="truncate">
+            {listener.name}
           </div>{/each}
       </div>{/if}
   </div>
