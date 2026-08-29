@@ -1,5 +1,77 @@
 <script module lang="ts">
   let youtubeApiPromise: Promise<unknown> | null = null;
+
+  export interface AutoplayResumePlayer {
+    getPlayerState(): number;
+    mute(): void;
+    unMute(): void;
+    setVolume(value: number): void;
+    playVideo(): void;
+  }
+
+  interface AutoplayResumeOptions {
+    isPlaying: () => boolean;
+    volume: () => number;
+    setNeedsClick: (value: boolean) => void;
+    setTimer: (callback: () => void, delay: number) => number;
+    clearTimer: (timer: number) => void;
+  }
+
+  export function createAutoplayResumeController(
+    options: AutoplayResumeOptions
+  ) {
+    let timer: number | null = null;
+
+    function clear() {
+      if (timer !== null) options.clearTimer(timer);
+      timer = null;
+    }
+
+    function playerIsPlaying(player: AutoplayResumePlayer | null): boolean {
+      return player?.getPlayerState() === 1;
+    }
+
+    function schedule(player: AutoplayResumePlayer) {
+      clear();
+      timer = options.setTimer(() => {
+        timer = null;
+        if (options.isPlaying() && !playerIsPlaying(player))
+          options.setNeedsClick(true);
+      }, 1_000);
+    }
+
+    return {
+      playerIsPlaying,
+      prepare(player: AutoplayResumePlayer, sync: () => void) {
+        if (options.isPlaying()) player.mute();
+        sync();
+        if (options.isPlaying()) schedule(player);
+      },
+      schedule,
+      onPlaying(player: AutoplayResumePlayer) {
+        clear();
+        options.setNeedsClick(false);
+        player.unMute();
+        player.setVolume(options.volume());
+      },
+      resume(player: AutoplayResumePlayer) {
+        options.setNeedsClick(false);
+        clear();
+        player.unMute();
+        player.setVolume(options.volume());
+        player.playVideo();
+        schedule(player);
+      },
+      pause() {
+        clear();
+        options.setNeedsClick(false);
+      },
+      dispose() {
+        clear();
+        options.setNeedsClick(false);
+      },
+    };
+  }
 </script>
 
 <script lang="ts">
@@ -77,9 +149,15 @@
   let loaded = "";
   let disposed = false;
   let needsResumeClick = $state(false);
-  let resumeTimer: ReturnType<typeof window.setTimeout> | null = null;
   let reportedPlaylist = "";
   let playlistReporter: ReturnType<typeof window.setInterval> | null = null;
+  const autoplayResume = createAutoplayResumeController({
+    isPlaying: () => playing,
+    volume: () => volume,
+    setNeedsClick: (value) => (needsResumeClick = value),
+    setTimer: (callback, delay) => window.setTimeout(callback, delay),
+    clearTimer: (timer) => window.clearTimeout(timer),
+  });
 
   function loadApi(): Promise<WaffleEmbedApi> {
     if (window.YT?.Player) return Promise.resolve(window.YT);
@@ -120,34 +198,9 @@
       : position;
   }
 
-  function clearResumeCheck() {
-    if (resumeTimer !== null) window.clearTimeout(resumeTimer);
-    resumeTimer = null;
-  }
-
-  function isPlayerPlaying(): boolean {
-    return (
-      typeof player?.getPlayerState === "function" &&
-      player.getPlayerState() === 1
-    );
-  }
-
-  function scheduleResumeCheck() {
-    clearResumeCheck();
-    resumeTimer = window.setTimeout(() => {
-      resumeTimer = null;
-      if (!disposed && playing && !isPlayerPlaying()) needsResumeClick = true;
-    }, 1_000);
-  }
-
   function resumePlayback() {
     if (!player) return;
-    needsResumeClick = false;
-    clearResumeCheck();
-    player.unMute();
-    player.setVolume(volume);
-    player.playVideo();
-    scheduleResumeCheck();
+    autoplayResume.resume(player);
   }
 
   function sync() {
@@ -209,9 +262,7 @@
               } else {
                 // A muted first play is permitted by autoplay policies that
                 // reject an unmuted play after a page refresh.
-                if (playing) player?.mute();
-                sync();
-                if (playing) scheduleResumeCheck();
+                if (player) autoplayResume.prepare(player, sync);
               }
               // Loading a new iframe can briefly leave YouTube paused even
               // though the shared party state is still playing. Re-assert
@@ -228,10 +279,7 @@
               if (event.data === 0) onEnded?.();
               if (event.data === 5) reportPlaylist();
               if (event.data === 1 && playing) {
-                clearResumeCheck();
-                needsResumeClick = false;
-                player?.unMute();
-                player?.setVolume(volume);
+                if (player) autoplayResume.onPlaying(player);
               }
               if (event.data === 2 && playing) {
                 // YouTube may pause once while an iframe is handed from the
@@ -240,7 +288,7 @@
                 window.setTimeout(() => {
                   if (!disposed && playing) player?.playVideo();
                 }, 0);
-                scheduleResumeCheck();
+                if (player) autoplayResume.schedule(player);
               }
               if (event.data === 1 || event.data === 2 || event.data === 5)
                 onPlayable?.();
@@ -258,7 +306,7 @@
       });
     return () => {
       disposed = true;
-      clearResumeCheck();
+      autoplayResume.dispose();
       window.clearInterval(reporter);
       if (playlistReporter) window.clearInterval(playlistReporter);
       player?.destroy();
@@ -271,10 +319,9 @@
     volume;
     sync();
     if (!playing) {
-      clearResumeCheck();
-      needsResumeClick = false;
-    } else if (ready && !isPlayerPlaying()) {
-      scheduleResumeCheck();
+      autoplayResume.pause();
+    } else if (ready && player && !autoplayResume.playerIsPlaying(player)) {
+      autoplayResume.schedule(player);
     }
   });
 
