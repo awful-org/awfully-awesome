@@ -146,3 +146,37 @@ export function rendererSyncUpdate(
     ? { action: "seek", position: Math.floor(position) }
     : { action: "resync", requestId, requesterDid: selfDid };
 }
+
+export function takeLiveRendererControl(
+  videoId: string,
+  fallback: number,
+  selfDid: string,
+  ownerDid: string,
+  requestId: string
+): { position: number; update: RendererSyncUpdate } {
+  const position = takeRendererPosition(videoId, fallback);
+  return {
+    position,
+    update: rendererSyncUpdate(selfDid, ownerDid, position, requestId),
+  };
+}
+
+export function takeParkedRendererControl(
+  videoId: string,
+  selfDid: string,
+  ownerDid: string,
+  requestId: string
+): { handoff: RendererHandoff; update: RendererSyncUpdate } | null {
+  const handoff = takeHandoff(videoId);
+  return handoff
+    ? {
+        handoff,
+        update: rendererSyncUpdate(
+          selfDid,
+          ownerDid,
+          handoff.position,
+          requestId
+        ),
+      }
+    : null;
+}

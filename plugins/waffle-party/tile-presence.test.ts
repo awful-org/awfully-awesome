@@ -16,6 +16,8 @@ import {
   publishLiveDuration,
   registerPositionSource,
   rendererSyncUpdate,
+  takeLiveRendererControl,
+  takeParkedRendererControl,
   takeRendererPosition,
   takeHandoff,
 } from "./tile-presence.svelte";
@@ -148,5 +150,30 @@ describe("renderer handoff", () => {
         requesterDid: "listener",
       }
     );
+  });
+
+  it("captures the live chat seed and sync update as one tile takeover", () => {
+    const unregister = registerPositionSource(() => 120.9);
+    expect(
+      takeLiveRendererControl("video", 0, "listener", "owner", "request-2")
+    ).toEqual({
+      position: 120.9,
+      update: {
+        action: "resync",
+        requestId: "request-2",
+        requesterDid: "listener",
+      },
+    });
+    unregister();
+  });
+
+  it("captures the parked tile seed and sync update as one chat takeover", () => {
+    parkHandoff("video", 180.9, 205, true);
+    expect(
+      takeParkedRendererControl("video", "owner", "owner", "unused")
+    ).toMatchObject({
+      handoff: { position: 180.9, duration: 205, playing: true },
+      update: { action: "seek", position: 180 },
+    });
   });
 });

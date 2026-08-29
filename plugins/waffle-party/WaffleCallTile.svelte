@@ -19,8 +19,7 @@
     registerPositionSource,
     parkHandoff,
     handoffIsReadyToRelease,
-    rendererSyncUpdate,
-    takeRendererPosition,
+    takeLiveRendererControl,
   } from "./tile-presence.svelte";
   import {
     audioVolume,
@@ -87,20 +86,20 @@
     // Capture the card's live source BEFORE this tile increments presence and
     // makes the card stand down. Waiting even one microtask can miss that
     // source on the second chat -> tile transition.
-    const takeoverPosition = takeRendererPosition(current, music.position);
-    playerLoading = true;
-    handoffPosition = takeoverPosition;
-    // Every renderer switch gets an authoritative network position too. The
-    // owner publishes its captured time; listeners ask the owner to answer.
     const requestId = selfDid === music.ownerDid ? "" : crypto.randomUUID();
-    const update = rendererSyncUpdate(
+    const takeover = takeLiveRendererControl(
+      current,
+      music.position,
       selfDid,
       music.ownerDid,
-      takeoverPosition,
       requestId
     );
-    if (update.action === "resync") activeResyncId = requestId;
-    void send(update);
+    playerLoading = true;
+    handoffPosition = takeover.position;
+    // Every renderer switch gets an authoritative network position too. The
+    // owner publishes its captured time; listeners ask the owner to answer.
+    if (takeover.update.action === "resync") activeResyncId = requestId;
+    void send(takeover.update);
     syncedJoinCount = music.activitySeq;
   });
   $effect(() => {
