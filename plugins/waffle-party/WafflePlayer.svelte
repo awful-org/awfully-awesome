@@ -75,8 +75,8 @@
 </script>
 
 <script lang="ts">
-  import { Play } from "@lucide/svelte";
   import { onMount } from "svelte";
+  import ResumeOverlay from "./ResumeOverlay.svelte";
 
   interface Props {
     videoId: string | null;
@@ -354,17 +354,7 @@
        input while Waffle Party's own controls render above the component. -->
   <div class="absolute inset-0 z-10" aria-hidden="true"></div>
   {#if needsResumeClick}
-    <button
-      type="button"
-      class="pointer-events-auto absolute inset-0 z-20 grid cursor-pointer place-items-center bg-black/20 text-white"
-      onclick={resumePlayback}
-      aria-label="Resume playback"
-      title="Resume playback"
-    >
-      <span class="grid size-14 place-items-center rounded-full bg-black/70 shadow-lg">
-        <Play class="size-7 fill-current" />
-      </span>
-    </button>
+    <ResumeOverlay onclick={resumePlayback} />
   {/if}
   {#if error}<p class="text-xs text-destructive">{error}</p>{/if}
 </div>

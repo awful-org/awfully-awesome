@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { render } from "svelte/server";
+import ResumeOverlay from "./ResumeOverlay.svelte";
 import { createAutoplayResumeController } from "./WafflePlayer.svelte";
 
 function setup(playing = true) {
@@ -35,6 +37,14 @@ function setup(playing = true) {
 }
 
 describe("muted autoplay resume", () => {
+  it("renders a clickable Play overlay above the inert shield", () => {
+    const { body } = render(ResumeOverlay, { props: { onclick: () => {} } });
+    expect(body).toContain("<button");
+    expect(body).toContain('aria-label="Resume playback"');
+    expect(body).toContain("z-20");
+    expect(body).toContain("lucide-play");
+  });
+
   it("mutes before the initial sync and shows fallback after one second", () => {
     const subject = setup();
     subject.controller.prepare(subject.player, () => subject.calls.push("sync"));
