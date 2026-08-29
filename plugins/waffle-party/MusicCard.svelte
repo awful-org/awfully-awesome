@@ -164,6 +164,13 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   const displayedPosition = $derived(seeking ? seekValue : rendererPosition);
   const joined = $derived(music.members.has(selfDid));
   const pendingPlaylist = $derived(music.playlistRequests[0] ?? null);
+  const loopLabel = $derived(
+    music.loop === "off"
+      ? "Loop Off"
+      : music.loop === "track"
+        ? "Loop Track"
+        : "Loop Queue"
+  );
   const listeners = $derived(
     Array.from(music.members.entries()).map(([did, name]) =>
       did === music.ownerDid ? card.senderName : name
@@ -631,18 +638,20 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
             onclick={() => send({ action: "skip" }, "Skipping…")} aria-label="Skip" title="Skip"><SkipForward class="size-4" /></button
           >
           <button
-            class="rounded border border-border px-3 py-2 {queueOpen
-              ? 'border-primary bg-primary text-primary-foreground'
-              : ''}"
+            class="rounded border px-3 py-2 transition-colors {queueOpen
+              ? 'border-green-500/50 bg-green-500/10 text-green-500 hover:bg-green-500/20'
+              : 'border-border hover:bg-muted'}"
             onclick={() => (queueOpen = !queueOpen)}
             aria-label={queueOpen ? "Hide queue" : "Show queue"} title={queueOpen ? "Hide queue" : "Show queue"}><List class="size-4" /></button
           >
           <button
-            class="flex items-center gap-1 rounded border border-border px-3 py-2 disabled:opacity-60"
+            class="flex items-center gap-1 rounded border px-3 py-2 transition-colors disabled:opacity-60 {music.loop === 'off'
+              ? 'border-border hover:bg-muted'
+              : 'border-green-500/50 text-green-500 hover:bg-green-500/10'}"
             disabled={pending !== null}
             onclick={cycleLoop}
-            aria-label={`Loop mode: ${music.loop}`}
-            title={`Loop mode: ${music.loop}. Click to change.`}
+            aria-label={loopLabel}
+            title={loopLabel}
           >{#if music.loop === "off"}<Ban class="size-4" />{:else if music.loop === "track"}<Repeat1 class="size-4" />{:else}<ListMusic class="size-4" />{/if}</button>
           </div>
           <div class="ml-auto flex gap-2">
