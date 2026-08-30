@@ -177,10 +177,10 @@
       {#each Array.from({ length: 9 }, (_, i) => i + 1) as slot (slot)}
         {@const sound = bySlot.get(slot)}
         {#if sound}
-          <div class="group relative min-w-0">
+          <div class="min-w-0 overflow-hidden rounded-md border border-border bg-muted/25">
             <button
               type="button"
-              class="flex h-20 w-full cursor-pointer flex-col items-center justify-center gap-1 rounded-md border px-2 text-center transition {activeSlot === slot ? 'border-primary bg-primary/20' : 'border-border bg-muted/25 hover:bg-muted/60'} disabled:cursor-not-allowed disabled:opacity-50"
+              class="flex h-16 w-full cursor-pointer flex-col items-center justify-center gap-1 px-2 text-center transition {activeSlot === slot ? 'bg-primary/20' : 'hover:bg-muted/60'} disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!!blocked}
               aria-label={`Play ${sound.name}`}
               onclick={() => void play(sound)}
@@ -188,8 +188,10 @@
               <span class="w-full truncate text-xs font-semibold">{sound.name}</span>
               <span class="font-mono text-[10px] text-muted-foreground">{(sound.durationMs / 1000).toFixed(2)}s · {Math.round(sound.volume * 100)}%</span>
             </button>
-            <button type="button" class="absolute left-1 top-1 cursor-pointer rounded bg-background/80 px-1 text-[10px] text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100 focus:opacity-100" aria-label={`Edit ${sound.name}`} onclick={() => beginEdit(sound)}>✎</button>
-            <button type="button" class="absolute right-1 top-1 cursor-pointer rounded bg-background/80 px-1 text-[10px] text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100 focus:opacity-100" aria-label={`Delete ${sound.name}`} onclick={() => void remove(sound)}>×</button>
+            <div class="flex border-t border-border/70">
+              <button type="button" class="flex-1 cursor-pointer px-1 py-1 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`Edit ${sound.name}`} onclick={() => beginEdit(sound)}>Edit</button>
+              <button type="button" class="flex-1 cursor-pointer border-l border-border/70 px-1 py-1 text-[10px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label={`Delete ${sound.name}`} onclick={() => void remove(sound)}>Delete</button>
+            </div>
           </div>
         {:else}
           <button
