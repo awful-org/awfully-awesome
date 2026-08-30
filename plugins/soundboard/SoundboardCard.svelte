@@ -5,6 +5,8 @@
   import { CropPreviewPlayer, type PreviewState } from "./preview";
   import SoundCropEditor from "./SoundCropEditor.svelte";
   import { deleteSound, listSounds, onLibraryChange, updateSound, type SoundRecord } from "./storage";
+  import { soundGlyph } from "./glyph";
+  import EmojiPickerPopup from "$lib/components/EmojiPickerPopup.svelte";
 
   let { host }: { host: HostApi } = $props();
   // svelte-ignore state_referenced_locally -- one host is fixed for this mount
@@ -21,6 +23,9 @@
   let editing = $state<SoundRecord | null>(null);
   let editName = $state("");
   let editVolume = $state(1);
+  let editEmoji = $state<string | undefined>(undefined);
+  let emojiPickerOpen = $state(false);
+  let emojiAnchor = $state<DOMRect | null>(null);
   let editSaving = $state(false);
   let editPreviewState = $state<PreviewState>("idle");
   let deleteTarget = $state<SoundRecord | null>(null);
@@ -123,6 +128,7 @@
     editing = sound;
     editName = sound.name;
     editVolume = sound.volume;
+    editEmoji = sound.emoji;
     error = "";
   }
 
@@ -145,7 +151,7 @@
     editSaving = true;
     error = "";
     try {
-      await updateSound(ownerDid, editing.slot, { name: editName, volume: editVolume });
+      await updateSound(ownerDid, editing.slot, { name: editName, volume: editVolume, emoji: editEmoji });
       editPreview.stop();
       editing = null;
     } catch (cause) {
@@ -184,10 +190,30 @@
     {#if editing}
       <div class="space-y-3 rounded-md border border-border bg-background/60 p-3">
         <p class="text-sm font-semibold">Edit sound</p>
-        <label class="block space-y-1 text-xs">
-          <span>Name</span>
-          <input class="w-full rounded-md border border-input bg-background px-2 py-1.5" maxlength="32" bind:value={editName} />
-        </label>
+        <div class="flex items-end gap-2">
+          <label class="block min-w-0 flex-1 space-y-1 text-xs">
+            <span>Name</span>
+            <input class="w-full rounded-md border border-input bg-background px-2 py-1.5" maxlength="32" bind:value={editName} />
+          </label>
+          <div class="space-y-1 text-xs">
+            <span class="block">Emoji</span>
+            <button
+              type="button"
+              class="flex h-8 w-10 cursor-pointer items-center justify-center rounded-md border border-input bg-background text-base"
+              aria-label="Pick an emoji for this sound"
+              onclick={(e) => {
+                emojiAnchor = e.currentTarget.getBoundingClientRect();
+                emojiPickerOpen = !emojiPickerOpen;
+              }}
+            >{editEmoji ?? soundGlyph(editing)}</button>
+          </div>
+        </div>
+        <EmojiPickerPopup
+          open={emojiPickerOpen}
+          anchor={emojiAnchor}
+          onSelect={(picked) => { editEmoji = picked; emojiPickerOpen = false; }}
+          onClose={() => { emojiPickerOpen = false; }}
+        />
         <label class="block space-y-1 text-xs">
           <span>Volume: {Math.round(editVolume * 100)}%</span>
           <input class="w-full" type="range" min="0" max="1" step="0.01" bind:value={editVolume} oninput={() => editPreview.stop()} />
@@ -219,11 +245,12 @@
           <div class="min-w-0 overflow-hidden rounded-md border border-border bg-muted/25">
             <button
               type="button"
-              class="flex h-16 w-full cursor-pointer flex-col items-center justify-center gap-1 px-2 text-center transition {activeSlot === slot ? 'bg-primary/20' : 'hover:bg-muted/60'} disabled:cursor-not-allowed disabled:opacity-50"
+              class="flex h-20 w-full cursor-pointer flex-col items-center justify-center gap-1 px-2 text-center transition {activeSlot === slot ? 'bg-primary/20' : 'hover:bg-muted/60'} disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!!blocked}
               aria-label={`Play ${sound.name}`}
               onclick={() => void play(sound)}
             >
+              <span class="text-base leading-none">{soundGlyph(sound)}</span>
               <span class="w-full truncate text-xs font-semibold">{sound.name}</span>
               <span class="font-mono text-[10px] text-muted-foreground">{(sound.durationMs / 1000).toFixed(2)}s · {Math.round(sound.volume * 100)}%</span>
             </button>

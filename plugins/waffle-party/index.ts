@@ -20,10 +20,9 @@ export default definePlugin({
   // and only queue/playback state syncs. PURE predicate: every client
   // shows/hides the tile on the same folded state.
   callTile: WaffleCallTile,
-  // One party at a time is the whole model - the picker offers only the
-  // newest card and pinning it replaces any older waffle pin.
-  singletonWidget: true,
   // The pinned strip follows the newest party YOU are in, across rooms.
+  // (Pins are one-per-plugin by construction; the old singletonWidget flag
+  // is deprecated and gone.)
   widgetMine: (cardState: unknown, selfDid: string) => {
     const s = cardState as MusicState | undefined;
     return !!s && !s.closed && s.members.has(selfDid);

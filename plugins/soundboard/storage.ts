@@ -13,6 +13,8 @@ export interface SoundRecord {
   blob: Blob;
   durationMs: number;
   volume: number;
+  /** Emoji shown on the grid tile and the sidebar widget button. */
+  emoji?: string;
   createdAt: number;
   schemaVersion: 1;
 }
@@ -40,6 +42,8 @@ function valid(record: unknown): record is SoundRecord {
     typeof sound.durationMs === "number" && sound.durationMs >= 250 && sound.durationMs <= 5000 &&
     (sound.volume === undefined ||
       (typeof sound.volume === "number" && Number.isFinite(sound.volume) && sound.volume >= 0 && sound.volume <= 1)) &&
+    (sound.emoji === undefined ||
+      (typeof sound.emoji === "string" && sound.emoji.length >= 1 && sound.emoji.length <= 16)) &&
     sound.schemaVersion === 1;
 }
 
@@ -64,12 +68,17 @@ export async function putSound(record: SoundRecord): Promise<void> {
 export async function updateSound(
   ownerDid: string,
   slot: number,
-  changes: { name: string; volume: number }
+  changes: { name: string; volume: number; emoji?: string }
 ): Promise<void> {
   const db = await database();
   const existing = await db.get(STORE, [ownerDid, slot]);
   if (!valid(existing) || existing.ownerDid !== ownerDid) throw new Error("Sound not found");
-  const updated = { ...existing, name: changes.name.trim(), volume: changes.volume };
+  const updated = {
+    ...existing,
+    name: changes.name.trim(),
+    volume: changes.volume,
+    emoji: changes.emoji ?? existing.emoji,
+  };
   if ([...updated.name].length < 1 || [...updated.name].length > 32 || !valid(updated)) {
     throw new Error("Invalid sound changes");
   }

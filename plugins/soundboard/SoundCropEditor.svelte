@@ -3,6 +3,7 @@
   import { buildWaveform, clampSelection, cropToMonoPcm, encodePcm16Wav } from "./crop";
   import { CropPreviewPlayer, type PreviewState } from "./preview";
   import { DEFAULT_SOUND_VOLUME, putSound, type SoundRecord } from "./storage";
+  import EmojiPickerPopup from "$lib/components/EmojiPickerPopup.svelte";
 
   interface Props {
     source: AudioBuffer;
@@ -22,6 +23,9 @@
   let error = $state("");
   let saving = $state(false);
   let volume = $state(DEFAULT_SOUND_VOLUME);
+  let emoji = $state("\u{1F50A}");
+  let emojiPickerOpen = $state(false);
+  let emojiAnchor = $state<DOMRect | null>(null);
   let previewState = $state<PreviewState>("idle");
   const preview = new CropPreviewPlayer(undefined, undefined, undefined, (state) => { previewState = state; });
   // svelte-ignore state_referenced_locally -- source is immutable for this editor mount
@@ -80,6 +84,7 @@
         blob,
         durationMs: Math.round(duration * 1000),
         volume,
+        emoji,
         createdAt: Date.now(),
         schemaVersion: 1,
       };
@@ -122,10 +127,30 @@
     <input class="w-full" type="range" min="0.25" max={source.duration} step="0.01" value={end} oninput={(e) => setEnd(+e.currentTarget.value)} />
   </label>
 
-  <label class="block space-y-1 text-xs">
-    <span>Name</span>
-    <input class="w-full rounded-md border border-input bg-background px-2 py-1.5" maxlength="32" bind:value={name} aria-invalid={!validName} />
-  </label>
+  <div class="flex items-end gap-2">
+    <label class="block min-w-0 flex-1 space-y-1 text-xs">
+      <span>Name</span>
+      <input class="w-full rounded-md border border-input bg-background px-2 py-1.5" maxlength="32" bind:value={name} aria-invalid={!validName} />
+    </label>
+    <div class="space-y-1 text-xs">
+      <span class="block">Emoji</span>
+      <button
+        type="button"
+        class="flex h-8 w-10 cursor-pointer items-center justify-center rounded-md border border-input bg-background text-base"
+        aria-label="Pick an emoji for this sound"
+        onclick={(e) => {
+          emojiAnchor = e.currentTarget.getBoundingClientRect();
+          emojiPickerOpen = !emojiPickerOpen;
+        }}
+      >{emoji}</button>
+    </div>
+  </div>
+  <EmojiPickerPopup
+    open={emojiPickerOpen}
+    anchor={emojiAnchor}
+    onSelect={(picked) => { emoji = picked; emojiPickerOpen = false; }}
+    onClose={() => { emojiPickerOpen = false; }}
+  />
   <label class="block space-y-1 text-xs">
     <span>Volume: {Math.round(volume * 100)}%</span>
     <input class="w-full" type="range" min="0" max="1" step="0.01" bind:value={volume} oninput={stopPreview} />

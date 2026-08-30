@@ -1,9 +1,12 @@
 # Soundboard
 
-Run `/soundboard` to open a private nine-slot soundboard. The panel appears
+Run `/soundboard` to open a private nine-slot soundboard, and pin it to a
+sidebar slot (the dotted "+ pin" boxes) to play sounds from anywhere - each
+sound's emoji becomes its one-tap button in the strip. The panel appears
 only on your device and never becomes a room message. Import an MP3, choose a
 segment from 0.25 through 5 seconds, preview it locally, set its volume, name it,
-and save it. Saved sounds can be renamed or have their volume adjusted later.
+and save it with an emoji. Saved sounds can be renamed or have their volume
+and emoji adjusted later.
 Clicking a saved tile mixes the clip into your outgoing P2P call audio, so the
 people in the call hear it as audio from you. It still plays while your
 microphone is muted; it is disabled while you are deafened or outside a call.

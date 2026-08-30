@@ -74,6 +74,19 @@ describe("soundboard storage", () => {
       .toEqual({ ...original, name: "Edited", volume: 0.4 });
   });
 
+  it("stores an emoji and keeps it across name-only edits", async () => {
+    await putSound({ ...sound("did:a", 3), emoji: "\u{1F525}" });
+    await updateSound("did:a", 3, { name: "Renamed", volume: 1 });
+    expect((await listSounds("did:a"))[0].emoji).toBe("\u{1F525}");
+    await updateSound("did:a", 3, { name: "Renamed", volume: 1, emoji: "\u{1F4A5}" });
+    expect((await listSounds("did:a"))[0].emoji).toBe("\u{1F4A5}");
+  });
+
+  it("rejects an oversized emoji string", async () => {
+    await expect(putSound({ ...sound("did:a", 4), emoji: "x".repeat(17) }))
+      .rejects.toThrow("Invalid");
+  });
+
   it("rejects invalid edits without changing the sound", async () => {
     const original = sound("did:a", 2);
     await putSound(original);
