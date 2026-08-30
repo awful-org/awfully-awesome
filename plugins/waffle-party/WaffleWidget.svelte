@@ -3,7 +3,7 @@
   import { Play, Pause, SkipBack, SkipForward } from "@lucide/svelte";
   import type { HostApi } from "$lib/plugins/api";
   import type { Message } from "$lib/transport/transport.svelte";
-  import type { MusicState } from "./logic";
+  import { initialState, type MusicState } from "./logic";
   import { Tip } from "$lib/plugins/ui";
   import { livePosition } from "./tile-presence.svelte";
   import { cachedTitle, fetchTitle } from "./titles";
@@ -14,7 +14,9 @@
     host: HostApi;
   }
   let { card, cardState, host }: Props = $props();
-  const music = $derived(cardState as MusicState);
+  // cardState can transiently be undefined (a mid-build state read); an
+  // empty party renders inert instead of throwing on every field access.
+  const music = $derived((cardState as MusicState | undefined) ?? initialState(null));
   const current = $derived(
     music.currentIndex === null ? null : music.queue[music.currentIndex]
   );

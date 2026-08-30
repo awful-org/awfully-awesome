@@ -21,6 +21,7 @@
   import WaffleSyncedControls from "./WaffleSyncedControls.svelte";
   import LoopButton, { queueButtonClass } from "./LoopButton.svelte";
   import {
+    initialState,
     playlistIdFromUrl,
     seekTarget,
     stateTick,
@@ -80,7 +81,9 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     host: HostApi;
   }
   let { card, cardState, host }: Props = $props();
-  const music = $derived(cardState as MusicState);
+  // cardState can transiently be undefined (a mid-build state read); an
+  // empty party renders inert instead of throwing on every field access.
+  const music = $derived((cardState as MusicState | undefined) ?? initialState(null));
   let queueOpen = $state(false);
   let url = $state("");
   let error = $state("");

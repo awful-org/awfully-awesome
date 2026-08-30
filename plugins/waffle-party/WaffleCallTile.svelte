@@ -7,6 +7,7 @@
   import WafflePlayer from "./WafflePlayer.svelte";
   import WaffleSyncedControls from "./WaffleSyncedControls.svelte";
   import {
+    initialState,
     seekTarget,
     stateTick,
     syncResponder,
@@ -40,7 +41,9 @@
     chromeVisible?: boolean;
   }
   let { card, cardState, host, chromeVisible = true }: Props = $props();
-  const music = $derived(cardState as MusicState);
+  // cardState can transiently be undefined (a mid-build state read); an
+  // empty party renders inert instead of throwing on every field access.
+  const music = $derived((cardState as MusicState | undefined) ?? initialState(null));
 
   const selfDid = untrack(() => host.selfDid());
   const joined = $derived(music.members.has(selfDid));
