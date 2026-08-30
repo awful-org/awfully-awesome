@@ -202,6 +202,15 @@
           </button>
         </div>
       </div>
+    {:else if deleteTarget}
+      <div class="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-3" role="alertdialog" aria-modal="true" aria-labelledby="soundboard-delete-title">
+        <p id="soundboard-delete-title" class="text-sm font-semibold">Delete “{deleteTarget.name}”?</p>
+        <p class="text-xs text-muted-foreground">This removes the sound from this device. It cannot be undone.</p>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="cursor-pointer rounded-md border px-3 py-1.5 text-xs" onclick={() => { deleteTarget = null; }}>Keep sound</button>
+          <button type="button" class="cursor-pointer rounded-md bg-destructive px-3 py-1.5 text-xs text-destructive-foreground" onclick={() => void confirmRemove()}>Delete sound</button>
+        </div>
+      </div>
     {:else}
       <div class="grid grid-cols-3 gap-2" aria-label="Personal soundboard">
       {#each Array.from({ length: 9 }, (_, i) => i + 1) as slot (slot)}
@@ -237,15 +246,5 @@
       {#if sounds.length >= 9}<p class="text-center text-xs text-muted-foreground">Delete one sound before adding another.</p>{/if}
     {/if}
 
-    {#if deleteTarget}
-      <div class="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-3" role="alertdialog" aria-modal="true" aria-labelledby="soundboard-delete-title">
-        <p id="soundboard-delete-title" class="text-sm font-semibold">Delete “{deleteTarget.name}”?</p>
-        <p class="text-xs text-muted-foreground">This removes the sound from this device. It cannot be undone.</p>
-        <div class="flex justify-end gap-2">
-          <button type="button" class="cursor-pointer rounded-md border px-3 py-1.5 text-xs" onclick={() => { deleteTarget = null; }}>Keep sound</button>
-          <button type="button" class="cursor-pointer rounded-md bg-destructive px-3 py-1.5 text-xs text-destructive-foreground" onclick={() => void confirmRemove()}>Delete sound</button>
-        </div>
-      </div>
-    {/if}
   </div>
 {/if}
