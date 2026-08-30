@@ -53,6 +53,11 @@
         options.setNeedsClick(false);
         player.unMute();
         player.setVolume(options.volume());
+        // Unmuting a muted autoplay can itself PAUSE playback in some
+        // browsers - and this was the last watchdog standing, so the party
+        // died silently with no resume overlay. Re-arm it: if playback
+        // survives the unmute the check passes, if not the overlay shows.
+        schedule(player);
       },
       resume(player: AutoplayResumePlayer) {
         options.setNeedsClick(false);

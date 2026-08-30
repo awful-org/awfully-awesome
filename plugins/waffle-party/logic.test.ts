@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   initialState,
   syncResponder,
+  syncResponderFor,
   playlistIdFromUrl,
   QUEUE_CAP,
   reduce,
@@ -655,5 +656,98 @@ describe("watch ticks", () => {
     const skipped = reduce(ticked, { data: { action: "skip" } } as never, ctx("u4")) as never as MusicState;
     expect(skipped.tickAtMs).toBeNull();
     expect(skipped.tickBy).toBeNull();
+  });
+});
+
+describe("shuffle", () => {
+  const threeTrack = () => {
+    let s = party();
+    s = update(s, { action: "add", videoId: second });
+    s = update(s, { action: "add", videoId: "abcdefghijk" });
+    return s;
+  };
+
+  it("permutes deterministically from the update id", () => {
+    const s = threeTrack();
+    const a = reduce(s, { data: { action: "shuffle" } }, {
+      ...ctx(), updateId: "deal-1",
+    } as never) as MusicState;
+    const b = reduce(s, { data: { action: "shuffle" } }, {
+      ...ctx(), updateId: "deal-1",
+    } as never) as MusicState;
+    expect(a.queue).toEqual(b.queue);
+    expect([...a.queue].sort()).toEqual([...s.queue].sort());
+  });
+
+  it("keeps the playing track playing at its new slot", () => {
+    const s = threeTrack();
+    const playingTrack = s.queue[s.currentIndex!];
+    const shuffled = reduce(s, { data: { action: "shuffle" } }, {
+      ...ctx(), updateId: "deal-2",
+    } as never) as MusicState;
+    expect(shuffled.queue[shuffled.currentIndex!]).toBe(playingTrack);
+  });
+
+  it("is a no-op below two tracks and for non-members", () => {
+    expect(update(party(), { action: "shuffle" })).toEqual(party());
+    const s = threeTrack();
+    expect(update(s, { action: "shuffle" }, "Stranger")).toBe(s);
+  });
+});
+
+describe("host refresh resync", () => {
+  it("lets a non-owner answer the owner's own resync request", () => {
+    let s = party();
+    s = update(s, { action: "join" }, "Bob");
+    // The OWNER asks; the responder for that request must be Bob.
+    s = update(s, {
+      action: "resync",
+      requestId: "owner-refresh-1",
+      requesterDid: "did:Alice",
+    });
+    expect(syncResponderFor(s, "did:Alice")).toBe("did:Bob");
+    const synced = update(
+      s,
+      {
+        action: "sync",
+        index: 0,
+        position: 123,
+        playing: true,
+        atMs: 1700000000000,
+        requestId: "owner-refresh-1",
+        targetDid: "did:Alice",
+      },
+      "Bob"
+    );
+    expect(synced.position).toBe(123);
+    expect(synced.syncResponse?.targetDid).toBe("did:Alice");
+  });
+
+  it("still refuses a sync from a member who is not the responder", () => {
+    let s = party();
+    s = update(s, { action: "join" }, "Bob");
+    s = update(s, { action: "join" }, "Carol");
+    s = update(s, {
+      action: "resync",
+      requestId: "owner-refresh-2",
+      requesterDid: "did:Alice",
+    });
+    // Owner is a valid responder for Bob/Carol requests but not for their
+    // own; and Carol cannot impersonate the responder for Alice's request
+    // (owner-preferred picks... owner excluded, so first other: Bob).
+    const fromCarol = update(
+      s,
+      {
+        action: "sync",
+        index: 0,
+        position: 55,
+        playing: true,
+        atMs: 1700000000000,
+        requestId: "owner-refresh-2",
+        targetDid: "did:Alice",
+      },
+      "Carol"
+    );
+    expect(fromCarol.position).not.toBe(55);
   });
 });

@@ -3,6 +3,7 @@ import type { UpdateCtx } from "$lib/plugins/api";
 export type ActivityAction =
   | "added"
   | "added a playlist"
+  | "shuffled the queue"
   | "removed"
   | "skipped"
   | "went to the previous track"
@@ -110,8 +111,44 @@ export function playlistIdFromUrl(input: string): string | null {
 export function syncResponder(music: MusicState): string | null {
   const dids = [...music.members.keys()];
   if (dids.length < 2) return null;
-  const others = dids.slice(0, -1);
-  return others.includes(music.ownerDid) ? music.ownerDid : (others[0] ?? null);
+  return syncResponderFor(music, dids[dids.length - 1]);
+}
+
+/**
+ * The responder for a specific requester: any member but them, owner
+ * preferred. A refreshed HOST asks too - the party's live position lives
+ * with whoever kept playing, and the owner's own folded state is exactly
+ * what went stale.
+ */
+export function syncResponderFor(
+  music: MusicState,
+  excludeDid: string
+): string | null {
+  const others = [...music.members.keys()].filter((did) => did !== excludeDid);
+  if (!others.length) return null;
+  return others.includes(music.ownerDid) ? music.ownerDid : others[0];
+}
+
+/** Fisher-Yates permutation of [0..length) seeded from a string - the
+ *  updateId is identical on every client, so so is the deal. */
+export function shuffledOrder(length: number, seed: string): number[] {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  const rand = () => {
+    h ^= h << 13;
+    h ^= h >>> 17;
+    h ^= h << 5;
+    return (h >>> 0) / 4294967296;
+  };
+  const order = Array.from({ length }, (_, index) => index);
+  for (let i = length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return order;
 }
 
 export function initialState(cardData: unknown): MusicState {
@@ -338,8 +375,16 @@ export function reduce(
       return { ...music, members };
     }
     case "sync": {
+      // A targeted response is judged against ITS request's responder, so a
+      // non-owner can answer the owner's own refresh resync.
+      const expectedResponder =
+        typeof data.requestId === "string" &&
+        music.syncRequest &&
+        data.requestId === music.syncRequest.id
+          ? syncResponderFor(music, music.syncRequest.requesterDid)
+          : syncResponder(music);
       if (
-        ctx.senderDid !== syncResponder(music) ||
+        ctx.senderDid !== expectedResponder ||
         !validIndex(data.index, music.queue) ||
         !validPosition(data.position) ||
         typeof data.playing !== "boolean" ||
@@ -430,6 +475,25 @@ export function reduce(
             ? true
             : music.playing,
       };
+    }
+    case "shuffle": {
+      if (music.queue.length < 2) return music;
+      const order = shuffledOrder(music.queue.length, ctx.updateId);
+      const queue = order.map((index) => music.queue[index]);
+      return withActivity(
+        {
+          ...music,
+          queue,
+          // The playing track keeps playing; only its slot moves.
+          currentIndex:
+            music.currentIndex === null
+              ? null
+              : order.indexOf(music.currentIndex),
+        },
+        ctx,
+        "shuffled the queue",
+        null
+      );
     }
     case "select": {
       if (!validIndex(data.index, music.queue)) return music;

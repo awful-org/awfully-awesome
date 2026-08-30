@@ -10,6 +10,7 @@
     Plus,
     SkipBack,
     SkipForward,
+    Shuffle,
     Trash2,
     Music,
   } from "@lucide/svelte";
@@ -23,6 +24,8 @@
     playlistIdFromUrl,
     seekTarget,
     stateTick,
+    syncResponder,
+    syncResponderFor,
     videoIdFromUrl,
     type MusicState,
   } from "./logic";
@@ -464,14 +467,23 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   $effect(() => {
     const latest = music.activity.at(-1);
     const request = music.syncRequest;
+    // Who answers is per-CASE: a join-sync falls to the standing responder,
+    // a targeted request to anyone but its requester (owner preferred) - so
+    // the party answers a refreshed HOST too, instead of owner-only
+    // answering that left everyone stuck whenever the owner was the one
+    // who went stale.
     const joinedNeedsSync =
-      latest?.action === "joined" && music.activitySeq !== syncedJoinCount;
-    const requestNeedsSync = !!request && request.id !== syncedRequestId;
+      latest?.action === "joined" &&
+      music.activitySeq !== syncedJoinCount &&
+      selfDid === syncResponder(music);
+    const requestNeedsSync =
+      !!request &&
+      request.id !== syncedRequestId &&
+      selfDid === syncResponderFor(music, request.requesterDid);
     if (
       // The tile is the renderer: it owns the join-sync too, and this
       // card's player is not even mounted to read a position from.
       tilePresence.count > 0 ||
-      selfDid !== music.ownerDid ||
       (!joinedNeedsSync && !requestNeedsSync) ||
       music.currentIndex === null
     )
@@ -553,6 +565,27 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   }
   $effect(() => {
     if (music.closed) refreshRecreate();
+  });
+  // A fresh mount of a PLAYING party (an F5, a room reopen) starts from the
+  // folded position, which is only as fresh as the last action - ask a
+  // member where the party actually is. The owner asks too: their own
+  // folded state is exactly what went stale.
+  let requestedMountResync = false;
+  $effect(() => {
+    if (
+      requestedMountResync ||
+      music.closed ||
+      !joined ||
+      !music.playing ||
+      music.currentIndex === null ||
+      music.members.size < 2 ||
+      tilePresence.count > 0
+    )
+      return;
+    requestedMountResync = true;
+    const requestId = crypto.randomUUID();
+    activeResyncId = requestId;
+    void send({ action: "resync", requestId, requesterDid: selfDid });
   });
   onMount(() => {
     void initializeAudioVolume(host.storage);
@@ -850,6 +883,20 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
             disabled={pending !== null}
             onclick={cycleLoop}
           />
+          {#if music.queue.length > 1}
+            <Tip text="Shuffle queue (for everyone)">
+              {#snippet children(props)}
+                <button
+                  {...props}
+                  class="rounded border border-border px-3 py-2 hover:bg-muted disabled:opacity-60"
+                  disabled={pending !== null}
+                  onclick={() => send({ action: "shuffle" }, "Shuffling…")}
+                  aria-label="Shuffle queue (for everyone)"
+                  ><Shuffle class="size-4" /></button
+                >
+              {/snippet}
+            </Tip>
+          {/if}
           <Tip text={musicOnly ? "Show the video (only you)" : "Music only (only you)"}>
             {#snippet children(props)}
               <button

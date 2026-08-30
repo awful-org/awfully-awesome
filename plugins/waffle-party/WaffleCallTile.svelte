@@ -6,7 +6,13 @@
   import { Tip } from "$lib/plugins/ui";
   import WafflePlayer from "./WafflePlayer.svelte";
   import WaffleSyncedControls from "./WaffleSyncedControls.svelte";
-  import { seekTarget, stateTick, type MusicState } from "./logic";
+  import {
+    seekTarget,
+    stateTick,
+    syncResponder,
+    syncResponderFor,
+    type MusicState,
+  } from "./logic";
   import { driftSeekTarget, projectedTickPosition } from "./watch-drift";
   import { clockEstimateFor, ensureClock } from "./clock";
   import {
@@ -217,11 +223,16 @@
   $effect(() => {
     const latest = music.activity.at(-1);
     const request = music.syncRequest;
+    // Same per-case responder rule as the card: see MusicCard's twin effect.
     const joinedNeedsSync =
-      latest?.action === "joined" && music.activitySeq !== syncedJoinCount;
-    const requestNeedsSync = !!request && request.id !== syncedRequestId;
+      latest?.action === "joined" &&
+      music.activitySeq !== syncedJoinCount &&
+      selfDid === syncResponder(music);
+    const requestNeedsSync =
+      !!request &&
+      request.id !== syncedRequestId &&
+      selfDid === syncResponderFor(music, request.requesterDid);
     if (
-      selfDid !== music.ownerDid ||
       (!joinedNeedsSync && !requestNeedsSync) ||
       music.currentIndex === null
     )
