@@ -24,6 +24,7 @@ when you redeploy, not on their own.
 
 | Plugin | Command | What it does |
 | --- | --- | --- |
+| [anime-party](plugins/anime-party) | `/anime-party` | Look up an anime on AniList and watch an episode together - each participant opens their own file, and the party keeps every open player in step. |
 | [steam-roulette](plugins/steam-roulette) | `/steam` | Everyone links their Steam library, the card intersects them, and one spin picks a game you all own. Needs two instance env vars, see its [README](plugins/steam-roulette/README.md). |
 | [waffle-party](plugins/waffle-party) | `/play` | Start a room-wide YouTube listening party from a video or playlist URL. Members join in one click from the chat card or the party's call tile, share queue and playback controls, and add or remove tracks. Playlists resolve with no API key. |
 
