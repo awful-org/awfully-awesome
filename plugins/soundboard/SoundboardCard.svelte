@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from "svelte";
   import type { HostApi } from "$lib/plugins/api";
   import { validateMp3File } from "./import";
+  import { CropPreviewPlayer, type PreviewState } from "./preview";
   import SoundCropEditor from "./SoundCropEditor.svelte";
   import { deleteSound, listSounds, onLibraryChange, updateSound, type SoundRecord } from "./storage";
 
@@ -21,11 +22,14 @@
   let editName = $state("");
   let editVolume = $state(1);
   let editSaving = $state(false);
+  let editPreviewState = $state<PreviewState>("idle");
+  let deleteTarget = $state<SoundRecord | null>(null);
   let activeTimer: ReturnType<typeof setTimeout> | null = null;
   let unsubscribe = () => {};
 
   const bySlot = $derived(new Map(sounds.map((sound) => [sound.slot, sound])));
   const blocked = $derived(host.callAudio.blockedReason());
+  const editPreview = new CropPreviewPlayer(undefined, undefined, undefined, (state) => { editPreviewState = state; });
 
   async function reload() {
     if (!ownerDid) {
@@ -51,6 +55,7 @@
     unsubscribe();
     if (activeTimer) clearTimeout(activeTimer);
     host.callAudio.stop(activePlayback ?? undefined);
+    editPreview.dispose();
   });
 
   function choose(slot: number) {
@@ -98,7 +103,13 @@
   }
 
   async function remove(sound: SoundRecord) {
-    if (!confirm(`Delete “${sound.name}” from this device?`)) return;
+    deleteTarget = sound;
+  }
+
+  async function confirmRemove() {
+    if (!deleteTarget) return;
+    const sound = deleteTarget;
+    deleteTarget = null;
     try {
       if (activeSlot === sound.slot) host.callAudio.stop(activePlayback ?? undefined);
       await deleteSound(ownerDid, sound.slot);
@@ -108,10 +119,25 @@
   }
 
   function beginEdit(sound: SoundRecord) {
+    editPreview.stop();
     editing = sound;
     editName = sound.name;
     editVolume = sound.volume;
     error = "";
+  }
+
+  async function previewEdit() {
+    if (!editing) return;
+    if (editPreviewState !== "idle") {
+      editPreview.stop();
+      return;
+    }
+    error = "";
+    try {
+      await editPreview.play(editing.blob, editVolume);
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : "Preview playback was blocked";
+    }
   }
 
   async function saveEdit() {
@@ -120,6 +146,7 @@
     error = "";
     try {
       await updateSound(ownerDid, editing.slot, { name: editName, volume: editVolume });
+      editPreview.stop();
       editing = null;
     } catch (cause) {
       error = cause instanceof Error ? cause.message : "The sound could not be updated";
@@ -163,10 +190,13 @@
         </label>
         <label class="block space-y-1 text-xs">
           <span>Volume: {Math.round(editVolume * 100)}%</span>
-          <input class="w-full" type="range" min="0" max="1" step="0.01" bind:value={editVolume} />
+          <input class="w-full" type="range" min="0" max="1" step="0.01" bind:value={editVolume} oninput={() => editPreview.stop()} />
         </label>
         <div class="flex justify-end gap-2">
-          <button type="button" class="cursor-pointer rounded-md border px-3 py-1.5 text-xs" onclick={() => { editing = null; }}>Cancel</button>
+          <button type="button" class="cursor-pointer rounded-md border px-3 py-1.5 text-xs" onclick={() => { editPreview.stop(); editing = null; }}>Cancel</button>
+          <button type="button" class="cursor-pointer rounded-md border px-3 py-1.5 text-xs" onclick={() => void previewEdit()}>
+            {editPreviewState === "idle" ? "Preview" : "Stop preview"}
+          </button>
           <button type="button" class="cursor-pointer rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground disabled:opacity-50" disabled={editSaving || [...editName.trim()].length < 1 || [...editName.trim()].length > 32} onclick={() => void saveEdit()}>
             {editSaving ? "Saving..." : "Save changes"}
           </button>
@@ -205,6 +235,17 @@
       {/each}
       </div>
       {#if sounds.length >= 9}<p class="text-center text-xs text-muted-foreground">Delete one sound before adding another.</p>{/if}
+    {/if}
+
+    {#if deleteTarget}
+      <div class="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-3" role="alertdialog" aria-modal="true" aria-labelledby="soundboard-delete-title">
+        <p id="soundboard-delete-title" class="text-sm font-semibold">Delete “{deleteTarget.name}”?</p>
+        <p class="text-xs text-muted-foreground">This removes the sound from this device. It cannot be undone.</p>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="cursor-pointer rounded-md border px-3 py-1.5 text-xs" onclick={() => { deleteTarget = null; }}>Keep sound</button>
+          <button type="button" class="cursor-pointer rounded-md bg-destructive px-3 py-1.5 text-xs text-destructive-foreground" onclick={() => void confirmRemove()}>Delete sound</button>
+        </div>
+      </div>
     {/if}
   </div>
 {/if}
