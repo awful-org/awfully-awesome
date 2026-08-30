@@ -90,6 +90,9 @@
     /** Viewer-local subtitles. YouTube's caption module is per-iframe, so
      *  each viewer chooses their own; nothing syncs. */
     captions?: boolean;
+    /** Music-only mode: a thumbnail URL painted opaquely over the iframe
+     *  (audio keeps playing). Null shows the video as usual. */
+    cover?: string | null;
     onPosition?: (position: number) => void;
     onDuration?: (duration: number) => void;
     onEnded?: () => void;
@@ -107,6 +110,7 @@
     volume = 100,
     controls = true,
     captions = false,
+    cover = null,
     onPosition,
     onDuration,
     onEnded,
@@ -387,6 +391,18 @@
   <!-- YouTube controls are local-only. This inert shield consumes pointer
        input while Waffle Party's own controls render above the component. -->
   <div class="absolute inset-0 z-10" aria-hidden="true"></div>
+  {#if cover}
+    <!-- Music-only: an opaque thumbnail over the iframe. The player keeps
+         playing underneath - covering is the one way to drop the video
+         without touching (and risking) the playback lifecycle. Below the
+         resume overlay (z-20), which must stay clickable. -->
+    <div
+      class="absolute inset-0 z-[15] overflow-hidden rounded-md bg-black"
+      aria-hidden="true"
+    >
+      <img src={cover} alt="" class="h-full w-full object-cover" />
+    </div>
+  {/if}
   {#if needsResumeClick}
     <ResumeOverlay onclick={resumePlayback} />
   {/if}

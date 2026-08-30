@@ -11,6 +11,7 @@
     SkipBack,
     SkipForward,
     Trash2,
+    Music,
   } from "@lucide/svelte";
   import type { HostApi } from "$lib/plugins/api";
   import type { Message } from "$lib/transport/transport.svelte";
@@ -83,6 +84,26 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   let player = $state<WafflePlayer | null>(null);
   let playerHover = $state(false);
   let captions = $state(false);
+  // Music-only: thumbnail instead of video, controls docked below - a view
+  // preference of THIS device, never synced to the party.
+  const MUSIC_ONLY_KEY = "waffle:music-only:v1";
+  let musicOnly = $state(
+    (() => {
+      try {
+        return localStorage.getItem(MUSIC_ONLY_KEY) === "1";
+      } catch {
+        return false;
+      }
+    })()
+  );
+  function toggleMusicOnly() {
+    musicOnly = !musicOnly;
+    try {
+      localStorage.setItem(MUSIC_ONLY_KEY, musicOnly ? "1" : "0");
+    } catch {
+      // The choice just does not survive a reload.
+    }
+  }
   // The classic below-player controls only serve the surfaces that mount no
   // local player (the call tile is rendering); when the card IS the
   // renderer, the overlay chrome on the player owns transport, seek and
@@ -641,6 +662,9 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
         {volume}
         controls={false}
         {captions}
+        cover={musicOnly && current
+          ? `https://i.ytimg.com/vi/${current}/hqdefault.jpg`
+          : null}
         onPosition={(value) => {
           localPosition = value;
           // Same drift correction as the call tile: local seek only, never
@@ -689,6 +713,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
           {captions}
           visible={playerHover}
           vignetteBoost
+          docked={musicOnly}
           queueLabel={music.currentIndex !== null
             ? `${music.currentIndex + 1}/${music.queue.length}`
             : ""}
@@ -805,6 +830,22 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
             disabled={pending !== null}
             onclick={cycleLoop}
           />
+          <Tip text={musicOnly ? "Show the video (only you)" : "Music only (only you)"}>
+            {#snippet children(props)}
+              <button
+                {...props}
+                class="rounded border px-3 py-2 transition-colors {queueButtonClass(
+                  musicOnly
+                )}"
+                onclick={toggleMusicOnly}
+                aria-label={musicOnly
+                  ? "Show the video (only you)"
+                  : "Music only (only you)"}
+                aria-pressed={musicOnly}
+                ><Music class="size-4" /></button
+              >
+            {/snippet}
+          </Tip>
           </div>
           <div class="ml-auto flex gap-2">
           {#if selfDid === music.ownerDid}<Tip text="Disband party">

@@ -25,6 +25,10 @@
     /** Heavier edge darkening - the message card sits inside the chat, so
      *  it needs more contrast to read as "our" player than the call tile. */
     vignetteBoost?: boolean;
+    /** Music-only: render the transport bar in NORMAL FLOW below the player
+     *  instead of overlay chrome - no vignette, no center button, always
+     *  visible. The `visible` prop is ignored. */
+    docked?: boolean;
     /** "3/12" queue readout; empty hides it. */
     queueLabel?: string;
     onTogglePlay: () => void;
@@ -44,6 +48,7 @@
     captions,
     visible,
     vignetteBoost = false,
+    docked = false,
     queueLabel = "",
     onTogglePlay,
     onPrevious,
@@ -88,49 +93,7 @@
      play/pause (the most common action deserves the biggest target), and
      the bottom transport bar. The root is pointer-inert; only the controls
      opt back in, so the surface underneath keeps its click behavior. -->
-<div class="pointer-events-none absolute inset-0 z-20">
-  <!-- Edge darkening: faded gradients on every side plus an inset glow,
-       always on and stronger while the chrome shows - the point is that
-       YouTube's own branding recedes and the party's UI reads as the
-       player. -->
-  <div
-    class="absolute inset-0 transition-opacity duration-300 {visible
-      ? 'opacity-100'
-      : 'opacity-80'}"
-    style={vignetteBoost
-      ? `background:
-        linear-gradient(to right, rgba(0,0,0,0.85), transparent 20%, transparent 80%, rgba(0,0,0,0.85)),
-        linear-gradient(to bottom, rgba(0,0,0,0.8), transparent 25%, transparent 60%, rgba(0,0,0,0.92));
-      box-shadow: inset 0 0 110px 40px rgba(0,0,0,0.75)`
-      : `background:
-        linear-gradient(to right, rgba(0,0,0,0.6), transparent 16%, transparent 84%, rgba(0,0,0,0.6)),
-        linear-gradient(to bottom, rgba(0,0,0,0.55), transparent 20%, transparent 65%, rgba(0,0,0,0.8));
-      box-shadow: inset 0 0 80px 20px rgba(0,0,0,0.6)`}
-    aria-hidden="true"
-  ></div>
-
-  <button
-    type="button"
-    onclick={(e) => {
-      e.stopPropagation();
-      onTogglePlay();
-    }}
-    aria-label={playing ? "Pause for everyone" : "Play for everyone"}
-    class="absolute left-1/2 top-1/2 grid size-14 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full bg-black/60 text-white transition hover:scale-105 hover:bg-black/75 {visible
-      ? 'pointer-events-auto opacity-100'
-      : 'pointer-events-none opacity-0'}"
-  >
-    {#if playing}<Pause class="size-6" />{:else}<Play class="size-6" />{/if}
-  </button>
-
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div
-    onclick={(e) => e.stopPropagation()}
-    class="absolute inset-x-0 bottom-0 flex flex-col gap-1 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2 pt-8 transition-opacity focus-within:opacity-100 {visible
-      ? 'pointer-events-auto opacity-100'
-      : 'pointer-events-none opacity-0'}"
-  >
+{#snippet transport()}
     <div class="relative">
       {#if hoverTime !== null}
         <span
@@ -262,5 +225,60 @@
         <span class="font-mono text-[10px] text-white/70">{queueLabel}</span>
       {/if}
     </div>
+{/snippet}
+
+{#if docked}
+  <!-- Music-only: the same bar, standing below the player instead of
+       floating over it. Dark panel so the white-on-dark buttons read
+       in both themes. -->
+  <div class="flex flex-col gap-1 rounded-md border border-border bg-black/90 px-3 py-2">
+    {@render transport()}
+  </div>
+{:else}
+<div class="pointer-events-none absolute inset-0 z-20">
+  <!-- Edge darkening: faded gradients on every side plus an inset glow,
+       always on and stronger while the chrome shows - the point is that
+       YouTube's own branding recedes and the party's UI reads as the
+       player. -->
+  <div
+    class="absolute inset-0 transition-opacity duration-300 {visible
+      ? 'opacity-100'
+      : 'opacity-80'}"
+    style={vignetteBoost
+      ? `background:
+        linear-gradient(to right, rgba(0,0,0,0.85), transparent 20%, transparent 80%, rgba(0,0,0,0.85)),
+        linear-gradient(to bottom, rgba(0,0,0,0.8), transparent 25%, transparent 60%, rgba(0,0,0,0.92));
+      box-shadow: inset 0 0 110px 40px rgba(0,0,0,0.75)`
+      : `background:
+        linear-gradient(to right, rgba(0,0,0,0.6), transparent 16%, transparent 84%, rgba(0,0,0,0.6)),
+        linear-gradient(to bottom, rgba(0,0,0,0.55), transparent 20%, transparent 65%, rgba(0,0,0,0.8));
+      box-shadow: inset 0 0 80px 20px rgba(0,0,0,0.6)`}
+    aria-hidden="true"
+  ></div>
+
+  <button
+    type="button"
+    onclick={(e) => {
+      e.stopPropagation();
+      onTogglePlay();
+    }}
+    aria-label={playing ? "Pause for everyone" : "Play for everyone"}
+    class="absolute left-1/2 top-1/2 grid size-14 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full bg-black/60 text-white transition hover:scale-105 hover:bg-black/75 {visible
+      ? 'pointer-events-auto opacity-100'
+      : 'pointer-events-none opacity-0'}"
+  >
+    {#if playing}<Pause class="size-6" />{:else}<Play class="size-6" />{/if}
+  </button>
+
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    onclick={(e) => e.stopPropagation()}
+    class="absolute inset-x-0 bottom-0 flex flex-col gap-1 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2 pt-8 transition-opacity focus-within:opacity-100 {visible
+      ? 'pointer-events-auto opacity-100'
+      : 'pointer-events-none opacity-0'}"
+  >
+    {@render transport()}
   </div>
 </div>
+{/if}
