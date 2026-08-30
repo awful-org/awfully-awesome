@@ -2,6 +2,7 @@ import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   deleteSound,
+  DEFAULT_SOUND_VOLUME,
   listSounds,
   onLibraryChange,
   putSound,
@@ -27,6 +28,10 @@ function sound(ownerDid: string, slot: number): SoundRecord {
 afterEach(() => resetSoundboardStorageForTests());
 
 describe("soundboard storage", () => {
+  it("uses a quieter fifty-percent default for new sounds", () => {
+    expect(DEFAULT_SOUND_VOLUME).toBe(0.5);
+  });
+
   it("isolates records by DID and keeps stable slot order", async () => {
     await putSound(sound("did:a", 9));
     await putSound(sound("did:b", 1));

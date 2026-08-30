@@ -2,7 +2,7 @@
   import { onDestroy } from "svelte";
   import { buildWaveform, clampSelection, cropToMonoPcm, encodePcm16Wav } from "./crop";
   import { CropPreviewPlayer, type PreviewState } from "./preview";
-  import { putSound, type SoundRecord } from "./storage";
+  import { DEFAULT_SOUND_VOLUME, putSound, type SoundRecord } from "./storage";
 
   interface Props {
     source: AudioBuffer;
@@ -21,7 +21,7 @@
   let name = $state(sourceName.replace(/\.mp3$/i, "").slice(0, 32));
   let error = $state("");
   let saving = $state(false);
-  let volume = $state(1);
+  let volume = $state(DEFAULT_SOUND_VOLUME);
   let previewState = $state<PreviewState>("idle");
   const preview = new CropPreviewPlayer(undefined, undefined, undefined, (state) => { previewState = state; });
   // svelte-ignore state_referenced_locally -- source is immutable for this editor mount
@@ -128,7 +128,7 @@
   </label>
   <label class="block space-y-1 text-xs">
     <span>Volume: {Math.round(volume * 100)}%</span>
-    <input class="w-full" type="range" min="0" max="1" step="0.05" bind:value={volume} oninput={stopPreview} />
+    <input class="w-full" type="range" min="0" max="1" step="0.01" bind:value={volume} oninput={stopPreview} />
   </label>
   {#if !validName}<p class="text-xs text-destructive">Use a name from 1 to 32 characters.</p>{/if}
   {#if error}<p class="text-xs text-destructive" role="alert">{error}</p>{/if}

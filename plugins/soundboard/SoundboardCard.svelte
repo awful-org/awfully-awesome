@@ -163,7 +163,7 @@
         </label>
         <label class="block space-y-1 text-xs">
           <span>Volume: {Math.round(editVolume * 100)}%</span>
-          <input class="w-full" type="range" min="0" max="1" step="0.05" bind:value={editVolume} />
+          <input class="w-full" type="range" min="0" max="1" step="0.01" bind:value={editVolume} />
         </label>
         <div class="flex justify-end gap-2">
           <button type="button" class="cursor-pointer rounded-md border px-3 py-1.5 text-xs" onclick={() => { editing = null; }}>Cancel</button>
@@ -172,9 +172,8 @@
           </button>
         </div>
       </div>
-    {/if}
-
-    <div class="grid grid-cols-3 gap-2" aria-label="Personal soundboard">
+    {:else}
+      <div class="grid grid-cols-3 gap-2" aria-label="Personal soundboard">
       {#each Array.from({ length: 9 }, (_, i) => i + 1) as slot (slot)}
         {@const sound = bySlot.get(slot)}
         {#if sound}
@@ -202,7 +201,8 @@
           >+</button>
         {/if}
       {/each}
-    </div>
-    {#if sounds.length >= 9}<p class="text-center text-xs text-muted-foreground">Delete one sound before adding another.</p>{/if}
+      </div>
+      {#if sounds.length >= 9}<p class="text-center text-xs text-muted-foreground">Delete one sound before adding another.</p>{/if}
+    {/if}
   </div>
 {/if}

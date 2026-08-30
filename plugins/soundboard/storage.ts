@@ -1,6 +1,7 @@
 import { openDB, type IDBPDatabase } from "idb";
 
 export const MAX_SOUNDS = 9;
+export const DEFAULT_SOUND_VOLUME = 0.5;
 const DB_NAME = "awful-plugin-soundboard";
 const STORE = "sounds";
 
