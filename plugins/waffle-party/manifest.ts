@@ -3,7 +3,7 @@ import type { PluginManifest } from "$lib/plugins/api";
 export const manifest: PluginManifest = {
   id: "waffle-party",
   name: "Waffle Party",
-  description: "Queue YouTube videos and listen together.",
+  description: "Queue YouTube videos to watch or listen together.",
   icon: "lucide:music",
   author: "Gustavo Walk",
   license: "MIT",
