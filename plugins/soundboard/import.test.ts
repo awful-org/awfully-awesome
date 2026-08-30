@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { hasMp3Signature, MAX_IMPORT_BYTES, validateMp3File } from "./import";
+import { hasMp3Signature, validateMp3File } from "./import";
+
+const SPEC_MAX_IMPORT_BYTES = 8 * 1024 * 1024;
 
 function mp3(name = "sound.mp3", type = "audio/mpeg", size = 8) {
   const bytes = new Uint8Array(size);
@@ -20,14 +22,14 @@ describe("MP3 import validation", () => {
 
   it("accepts exact size and duration boundaries", async () => {
     const decode = vi.fn(async () => decoded(120, 2));
-    const file = mp3("BOUNDARY.MP3", "", MAX_IMPORT_BYTES);
+    const file = mp3("BOUNDARY.MP3", "", SPEC_MAX_IMPORT_BYTES);
     const result = await validateMp3File(file, decode);
     expect(result.buffer.duration).toBe(120);
     expect(decode).toHaveBeenCalledOnce();
   });
 
   it.each([
-    [new File([new Uint8Array(MAX_IMPORT_BYTES + 1)], "a.mp3", { type: "audio/mpeg" }), "8 MiB"],
+    [new File([new Uint8Array(SPEC_MAX_IMPORT_BYTES + 1)], "a.mp3", { type: "audio/mpeg" }), "8 MiB"],
     [mp3("a.wav"), "Choose an MP3"],
     [mp3("a.mp3", "audio/wav"), "Choose an MP3"],
     [new File([new Uint8Array([1, 2, 3])], "a.mp3", { type: "audio/mpeg" }), "valid MP3"],

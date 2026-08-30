@@ -52,6 +52,8 @@ describe("soundboard storage", () => {
   });
 
   it("rejects records outside the nine slots or five-second bound", async () => {
+    await expect(putSound({ ...sound("did:a", 9), durationMs: 5000 })).resolves.toBeUndefined();
+    expect((await listSounds("did:a"))[0].durationMs).toBe(5000);
     await expect(putSound(sound("did:a", 10))).rejects.toThrow("Invalid");
     await expect(putSound({ ...sound("did:a", 1), durationMs: 5001 }))
       .rejects.toThrow("Invalid");

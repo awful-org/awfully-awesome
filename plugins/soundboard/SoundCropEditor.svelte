@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { buildWaveform, clampSelection, cropToMonoPcm, encodePcm16Wav } from "./crop";
   import { putSound, type SoundRecord } from "./storage";
 
@@ -33,6 +34,12 @@
       preview = null;
     }
   }
+
+  onDestroy(() => {
+    stopPreview();
+    void previewContext?.close();
+    previewContext = null;
+  });
 
   function setStart(value: number) {
     stopPreview();
