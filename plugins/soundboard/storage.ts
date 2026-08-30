@@ -11,6 +11,7 @@ export interface SoundRecord {
   name: string;
   blob: Blob;
   durationMs: number;
+  volume: number;
   createdAt: number;
   schemaVersion: 1;
 }
@@ -36,6 +37,8 @@ function valid(record: unknown): record is SoundRecord {
     typeof sound.name === "string" &&
     sound.blob instanceof Blob &&
     typeof sound.durationMs === "number" && sound.durationMs >= 250 && sound.durationMs <= 5000 &&
+    (sound.volume === undefined ||
+      (typeof sound.volume === "number" && Number.isFinite(sound.volume) && sound.volume >= 0 && sound.volume <= 1)) &&
     sound.schemaVersion === 1;
 }
 
@@ -44,6 +47,7 @@ export async function listSounds(ownerDid: string): Promise<SoundRecord[]> {
   const records = await (await database()).getAll(STORE);
   return records
     .filter((record) => valid(record) && record.ownerDid === ownerDid)
+    .map((record) => ({ ...record, volume: record.volume ?? 1 }))
     .sort((a, b) => a.slot - b.slot);
 }
 
@@ -53,6 +57,22 @@ export async function putSound(record: SoundRecord): Promise<void> {
   const existing = await db.get(STORE, [record.ownerDid, record.slot]);
   if (existing) throw new Error("That soundboard slot is already occupied");
   await db.put(STORE, record);
+  for (const listener of listeners) listener();
+}
+
+export async function updateSound(
+  ownerDid: string,
+  slot: number,
+  changes: { name: string; volume: number }
+): Promise<void> {
+  const db = await database();
+  const existing = await db.get(STORE, [ownerDid, slot]);
+  if (!valid(existing) || existing.ownerDid !== ownerDid) throw new Error("Sound not found");
+  const updated = { ...existing, name: changes.name.trim(), volume: changes.volume };
+  if ([...updated.name].length < 1 || [...updated.name].length > 32 || !valid(updated)) {
+    throw new Error("Invalid sound changes");
+  }
+  await db.put(STORE, updated);
   for (const listener of listeners) listener();
 }
 

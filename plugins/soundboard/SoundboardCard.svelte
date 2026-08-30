@@ -3,7 +3,7 @@
   import type { HostApi } from "$lib/plugins/api";
   import { validateMp3File } from "./import";
   import SoundCropEditor from "./SoundCropEditor.svelte";
-  import { deleteSound, listSounds, onLibraryChange, type SoundRecord } from "./storage";
+  import { deleteSound, listSounds, onLibraryChange, updateSound, type SoundRecord } from "./storage";
 
   let { host }: { host: HostApi } = $props();
   // svelte-ignore state_referenced_locally -- one host is fixed for this mount
@@ -17,6 +17,10 @@
   let fileInput = $state<HTMLInputElement | null>(null);
   let activeSlot = $state<number | null>(null);
   let activePlayback = $state<string | null>(null);
+  let editing = $state<SoundRecord | null>(null);
+  let editName = $state("");
+  let editVolume = $state(1);
+  let editSaving = $state(false);
   let activeTimer: ReturnType<typeof setTimeout> | null = null;
   let unsubscribe = () => {};
 
@@ -78,7 +82,7 @@
     try {
       if (activeTimer) clearTimeout(activeTimer);
       host.callAudio.stop(activePlayback ?? undefined);
-      const playback = await host.callAudio.play(sound.blob);
+      const playback = await host.callAudio.play(sound.blob, { volume: sound.volume });
       activeSlot = sound.slot;
       activePlayback = playback.id;
       activeTimer = setTimeout(() => {
@@ -100,6 +104,27 @@
       await deleteSound(ownerDid, sound.slot);
     } catch {
       error = "The sound could not be deleted from local storage.";
+    }
+  }
+
+  function beginEdit(sound: SoundRecord) {
+    editing = sound;
+    editName = sound.name;
+    editVolume = sound.volume;
+    error = "";
+  }
+
+  async function saveEdit() {
+    if (!editing || editSaving) return;
+    editSaving = true;
+    error = "";
+    try {
+      await updateSound(ownerDid, editing.slot, { name: editName, volume: editVolume });
+      editing = null;
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : "The sound could not be updated";
+    } finally {
+      editSaving = false;
     }
   }
 </script>
@@ -129,6 +154,26 @@
     {#if blocked === "deafened"}<p class="text-xs text-muted-foreground">Undeafen to play.</p>{/if}
     {#if error}<p class="text-xs text-destructive" role="alert">{error}</p>{/if}
 
+    {#if editing}
+      <div class="space-y-3 rounded-md border border-border bg-background/60 p-3">
+        <p class="text-sm font-semibold">Edit sound</p>
+        <label class="block space-y-1 text-xs">
+          <span>Name</span>
+          <input class="w-full rounded-md border border-input bg-background px-2 py-1.5" maxlength="32" bind:value={editName} />
+        </label>
+        <label class="block space-y-1 text-xs">
+          <span>Volume: {Math.round(editVolume * 100)}%</span>
+          <input class="w-full" type="range" min="0" max="1" step="0.05" bind:value={editVolume} />
+        </label>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="cursor-pointer rounded-md border px-3 py-1.5 text-xs" onclick={() => { editing = null; }}>Cancel</button>
+          <button type="button" class="cursor-pointer rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground disabled:opacity-50" disabled={editSaving || [...editName.trim()].length < 1 || [...editName.trim()].length > 32} onclick={() => void saveEdit()}>
+            {editSaving ? "Saving..." : "Save changes"}
+          </button>
+        </div>
+      </div>
+    {/if}
+
     <div class="grid grid-cols-3 gap-2" aria-label="Personal soundboard">
       {#each Array.from({ length: 9 }, (_, i) => i + 1) as slot (slot)}
         {@const sound = bySlot.get(slot)}
@@ -142,8 +187,9 @@
               onclick={() => void play(sound)}
             >
               <span class="w-full truncate text-xs font-semibold">{sound.name}</span>
-              <span class="font-mono text-[10px] text-muted-foreground">{(sound.durationMs / 1000).toFixed(2)}s</span>
+              <span class="font-mono text-[10px] text-muted-foreground">{(sound.durationMs / 1000).toFixed(2)}s · {Math.round(sound.volume * 100)}%</span>
             </button>
+            <button type="button" class="absolute left-1 top-1 cursor-pointer rounded bg-background/80 px-1 text-[10px] text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100 focus:opacity-100" aria-label={`Edit ${sound.name}`} onclick={() => beginEdit(sound)}>✎</button>
             <button type="button" class="absolute right-1 top-1 cursor-pointer rounded bg-background/80 px-1 text-[10px] text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100 focus:opacity-100" aria-label={`Delete ${sound.name}`} onclick={() => void remove(sound)}>×</button>
           </div>
         {:else}

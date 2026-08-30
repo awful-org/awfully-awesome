@@ -21,8 +21,9 @@
   let name = $state(sourceName.replace(/\.mp3$/i, "").slice(0, 32));
   let error = $state("");
   let saving = $state(false);
+  let volume = $state(1);
   let previewState = $state<PreviewState>("idle");
-  const preview = new CropPreviewPlayer(undefined, (state) => { previewState = state; });
+  const preview = new CropPreviewPlayer(undefined, undefined, undefined, (state) => { previewState = state; });
   // svelte-ignore state_referenced_locally -- source is immutable for this editor mount
   const waveform = buildWaveform(source, 80);
   const duration = $derived(end - start);
@@ -57,7 +58,8 @@
       return;
     }
     try {
-      await preview.play(source, start, duration);
+      const pcm = cropToMonoPcm(source, { startSeconds: start, endSeconds: end });
+      await preview.play(encodePcm16Wav(pcm), volume);
     } catch (cause) {
       error = cause instanceof Error ? cause.message : "Preview playback was blocked";
     }
@@ -77,6 +79,7 @@
         name: name.trim(),
         blob,
         durationMs: Math.round(duration * 1000),
+        volume,
         createdAt: Date.now(),
         schemaVersion: 1,
       };
@@ -122,6 +125,10 @@
   <label class="block space-y-1 text-xs">
     <span>Name</span>
     <input class="w-full rounded-md border border-input bg-background px-2 py-1.5" maxlength="32" bind:value={name} aria-invalid={!validName} />
+  </label>
+  <label class="block space-y-1 text-xs">
+    <span>Volume: {Math.round(volume * 100)}%</span>
+    <input class="w-full" type="range" min="0" max="1" step="0.05" bind:value={volume} oninput={stopPreview} />
   </label>
   {#if !validName}<p class="text-xs text-destructive">Use a name from 1 to 32 characters.</p>{/if}
   {#if error}<p class="text-xs text-destructive" role="alert">{error}</p>{/if}

@@ -2,7 +2,8 @@
 
 Run `/soundboard` to open a private nine-slot soundboard. The panel appears
 only on your device and never becomes a room message. Import an MP3, choose a
-segment from 0.25 through 5 seconds, preview it locally, name it, and save it.
+segment from 0.25 through 5 seconds, preview it locally, set its volume, name it,
+and save it. Saved sounds can be renamed or have their volume adjusted later.
 Clicking a saved tile mixes the clip into your outgoing P2P call audio, so the
 people in the call hear it as audio from you. It still plays while your
 microphone is muted; it is disabled while you are deafened or outside a call.

@@ -6,6 +6,7 @@ import {
   onLibraryChange,
   putSound,
   resetSoundboardStorageForTests,
+  updateSound,
   type SoundRecord,
 } from "./storage";
 
@@ -17,6 +18,7 @@ function sound(ownerDid: string, slot: number): SoundRecord {
     name: `Sound ${slot}`,
     blob: new Blob(["wav"], { type: "audio/wav" }),
     durationMs: 1000,
+    volume: 1,
     createdAt: 1,
     schemaVersion: 1,
   };
@@ -57,5 +59,40 @@ describe("soundboard storage", () => {
     await expect(putSound(sound("did:a", 10))).rejects.toThrow("Invalid");
     await expect(putSound({ ...sound("did:a", 1), durationMs: 5001 }))
       .rejects.toThrow("Invalid");
+  });
+
+  it("updates only the editable name and volume fields", async () => {
+    const original = sound("did:a", 2);
+    await putSound(original);
+    await updateSound("did:a", 2, { name: "  Edited  ", volume: 0.4 });
+    expect((await listSounds("did:a"))[0])
+      .toEqual({ ...original, name: "Edited", volume: 0.4 });
+  });
+
+  it("rejects invalid edits without changing the sound", async () => {
+    const original = sound("did:a", 2);
+    await putSound(original);
+    await expect(updateSound("did:a", 2, { name: "", volume: 1.1 }))
+      .rejects.toThrow("Invalid");
+    expect((await listSounds("did:a"))[0]).toEqual(original);
+  });
+
+  it("loads legacy records without a volume at full volume", async () => {
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open("awful-plugin-soundboard", 1);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore("sounds", { keyPath: ["ownerDid", "slot"] });
+      };
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const db = request.result;
+        const transaction = db.transaction("sounds", "readwrite");
+        const { volume: _, ...legacy } = sound("did:a", 1);
+        transaction.objectStore("sounds").put(legacy);
+        transaction.onerror = () => reject(transaction.error);
+        transaction.oncomplete = () => { db.close(); resolve(); };
+      };
+    });
+    expect((await listSounds("did:a"))[0].volume).toBe(1);
   });
 });

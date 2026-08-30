@@ -1,69 +1,71 @@
 import { describe, expect, it, vi } from "vitest";
 import { CropPreviewPlayer, type PreviewState } from "./preview";
 
-class SourceMock {
-  buffer: AudioBuffer | null = null;
+class AudioMock {
+  src = "";
+  volume = 1;
   onended: (() => void) | null = null;
-  connect = vi.fn();
-  disconnect = vi.fn();
-  start = vi.fn();
-  stop = vi.fn();
+  play: ReturnType<typeof vi.fn<() => Promise<void>>>;
+  pause = vi.fn();
+
+  constructor(play: () => Promise<void>) {
+    this.play = vi.fn(play);
+  }
 }
 
-function setup(state: AudioContextState = "running") {
-  const sources: SourceMock[] = [];
-  const context = {
-    state,
-    destination: {},
-    resume: vi.fn(async () => undefined),
-    close: vi.fn(async () => undefined),
-    createBufferSource: vi.fn(() => {
-      const source = new SourceMock();
-      sources.push(source);
-      return source;
-    }),
-  } as unknown as AudioContext;
+function setup(play: () => Promise<void> = async () => undefined) {
+  const audios: AudioMock[] = [];
   const states: PreviewState[] = [];
-  const player = new CropPreviewPlayer(() => context, (next) => states.push(next));
-  return { context, player, sources, states };
+  const revoked: string[] = [];
+  const player = new CropPreviewPlayer(
+    () => {
+      const audio = new AudioMock(play);
+      audios.push(audio);
+      return audio;
+    },
+    () => `blob:preview-${audios.length}`,
+    (url) => revoked.push(url),
+    (state) => states.push(state),
+  );
+  return { audios, player, revoked, states };
 }
-
-const buffer = {} as AudioBuffer;
 
 describe("CropPreviewPlayer", () => {
-  it("replaces an active preview and starts from the new selection", async () => {
-    const { player, sources, states } = setup();
-    await player.play(buffer, 1, 2);
-    await player.play(buffer, 3, 1);
-    expect(sources[0].stop).toHaveBeenCalledOnce();
-    expect(sources[1].start).toHaveBeenCalledWith(0, 3, 1);
+  it("plays the rendered crop at its selected volume", async () => {
+    const { audios, player, states } = setup();
+    await player.play(new Blob(["crop"]), 0.35);
+    expect(audios[0].src).toBe("blob:preview-1");
+    expect(audios[0].volume).toBe(0.35);
+    expect(audios[0].play).toHaveBeenCalledOnce();
     expect(states.at(-1)).toBe("playing");
   });
 
-  it("cancels a preview while browser audio permission is resuming", async () => {
+  it("replaces an active preview and revokes its temporary URL", async () => {
+    const { audios, player, revoked } = setup();
+    await player.play(new Blob(["first"]), 1);
+    await player.play(new Blob(["second"]), 1);
+    expect(audios[0].pause).toHaveBeenCalledOnce();
+    expect(revoked).toEqual(["blob:preview-1"]);
+    expect(audios[1].play).toHaveBeenCalledOnce();
+  });
+
+  it("cancels a preview while browser playback is pending", async () => {
     let release!: () => void;
-    const { context, player, sources, states } = setup("suspended");
-    vi.mocked(context.resume).mockReturnValue(new Promise<void>((resolve) => { release = resolve; }));
-    const pending = player.play(buffer, 0, 1);
+    const { audios, player, states } = setup(
+      () => new Promise<void>((resolve) => { release = resolve; })
+    );
+    const pending = player.play(new Blob(["crop"]), 1);
     player.stop();
     release();
     await pending;
-    expect(sources).toHaveLength(0);
+    expect(audios[0].pause).toHaveBeenCalledOnce();
     expect(states.at(-1)).toBe("idle");
   });
 
-  it("returns to idle when the browser rejects playback", async () => {
-    const { context, player, states } = setup("suspended");
-    vi.mocked(context.resume).mockRejectedValue(new Error("blocked"));
-    await expect(player.play(buffer, 0, 1)).rejects.toThrow("blocked");
+  it("returns to idle and releases the URL when playback is rejected", async () => {
+    const { player, revoked, states } = setup(async () => { throw new Error("blocked"); });
+    await expect(player.play(new Blob(["crop"]), 1)).rejects.toThrow("blocked");
+    expect(revoked).toEqual(["blob:preview-1"]);
     expect(states.at(-1)).toBe("idle");
-  });
-
-  it("stops playback and closes its context on dispose", async () => {
-    const { context, player, sources } = setup();
-    await player.play(buffer, 0, 1);
-    player.dispose();
-    expect(sources[0].stop).toHaveBeenCalledOnce();
-    expect(context.close).toHaveBeenCalledOnce();
   });
 });

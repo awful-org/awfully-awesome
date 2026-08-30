@@ -1,66 +1,69 @@
 export type PreviewState = "idle" | "starting" | "playing";
 
-type PreviewContext = Pick<
-  AudioContext,
-  "state" | "destination" | "resume" | "createBufferSource" | "close"
->;
+type PreviewAudio = Pick<HTMLAudioElement, "src" | "volume" | "onended" | "play" | "pause">;
 
 export class CropPreviewPlayer {
-  private context: PreviewContext | null = null;
-  private source: AudioBufferSourceNode | null = null;
+  private audio: PreviewAudio | null = null;
+  private objectUrl: string | null = null;
   private generation = 0;
 
   constructor(
-    private createContext: () => PreviewContext = () => new AudioContext(),
+    private createAudio: () => PreviewAudio = () => new Audio(),
+    private createUrl: (blob: Blob) => string = (blob) => URL.createObjectURL(blob),
+    private revokeUrl: (url: string) => void = (url) => URL.revokeObjectURL(url),
     private stateChanged: (state: PreviewState) => void = () => {},
   ) {}
 
-  async play(buffer: AudioBuffer, start: number, duration: number): Promise<void> {
-    this.stopSource();
+  async play(blob: Blob, volume: number): Promise<void> {
+    this.stopAudio();
     const generation = ++this.generation;
     this.stateChanged("starting");
 
-    try {
-      this.context ??= this.createContext();
-      if (this.context.state === "suspended") await this.context.resume();
-      if (generation !== this.generation) return;
+    const audio = this.createAudio();
+    const objectUrl = this.createUrl(blob);
+    this.audio = audio;
+    this.objectUrl = objectUrl;
+    audio.src = objectUrl;
+    audio.volume = volume;
+    audio.onended = () => {
+      if (this.audio !== audio) return;
+      this.stopAudio();
+      this.stateChanged("idle");
+    };
 
-      const source = this.context.createBufferSource();
-      source.buffer = buffer;
-      source.connect(this.context.destination);
-      source.onended = () => {
-        if (this.source !== source) return;
-        source.disconnect();
-        this.source = null;
-        this.stateChanged("idle");
-      };
-      this.source = source;
-      source.start(0, start, duration);
+    try {
+      await audio.play();
+      if (generation !== this.generation) return;
       this.stateChanged("playing");
     } catch (cause) {
-      if (generation === this.generation) this.stateChanged("idle");
+      if (generation === this.generation) {
+        this.stopAudio();
+        this.stateChanged("idle");
+      }
       throw cause;
     }
   }
 
   stop(): void {
     ++this.generation;
-    this.stopSource();
+    this.stopAudio();
     this.stateChanged("idle");
   }
 
   dispose(): void {
     this.stop();
-    void this.context?.close();
-    this.context = null;
   }
 
-  private stopSource(): void {
-    if (!this.source) return;
-    const source = this.source;
-    this.source = null;
-    source.onended = null;
-    try { source.stop(); } catch {}
-    source.disconnect();
+  private stopAudio(): void {
+    if (this.audio) {
+      this.audio.onended = null;
+      this.audio.pause();
+      this.audio.src = "";
+      this.audio = null;
+    }
+    if (this.objectUrl) {
+      this.revokeUrl(this.objectUrl);
+      this.objectUrl = null;
+    }
   }
 }
