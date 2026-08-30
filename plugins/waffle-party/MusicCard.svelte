@@ -646,7 +646,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
         >
           ▶ Rendering in the call
         </p>
-      {:else}
+      {:else if current}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         class="relative"
@@ -656,8 +656,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       <WafflePlayer
         bind:this={player}
         videoId={current}
-        playlistId={current ? null : pendingPlaylist}
-        playing={current ? music.playing : false}
+        playing={music.playing}
         position={transition?.position ?? syncPosition}
         {volume}
         controls={false}
@@ -700,7 +699,6 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
         onReady={() => (playerLoading = false)}
         onPlayable={() => (playerLoading = false)}
         onError={() => (playerLoading = false)}
-        onPlaylist={selfDid === music.ownerDid ? resolvePlaylist : undefined}
       />
       {#if current}
         <!-- The same synced chrome the call tile renders: center
@@ -731,7 +729,9 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       {#if playerLoading}<p class="text-center text-xs text-muted-foreground">
           Loading player…
         </p>{/if}
-      {/if}
+      {:else}<p class="py-8 text-center text-sm text-muted-foreground">
+        Loading playlist…
+      </p>{/if}
     </div>{:else if !joined}<p
       class="py-5 text-center text-sm text-muted-foreground"
     >
@@ -755,6 +755,26 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     >
       Reading playlist…
     </p>{/if}
+  {#if !music.closed && selfDid === music.ownerDid && pendingPlaylist}
+    <!-- The owner's playlist resolver: a hidden cue-only player that exists
+         to read the playlist's video ids and feed resolve-playlist batches.
+         The VISIBLE player used to double as this, but only when nothing
+         was playing - add a playlist mid-track (or while the call tile
+         rendered) and the request sat unresolved forever. Keyed so each
+         queued playlist gets a fresh iframe (the cue happens in onReady). -->
+    {#key pendingPlaylist}
+      <WafflePlayer
+        videoId={null}
+        playlistId={pendingPlaylist}
+        playing={false}
+        position={0}
+        volume={0}
+        controls={false}
+        hidden
+        onPlaylist={resolvePlaylist}
+      />
+    {/key}
+  {/if}
   {#if !music.closed && joined}<div class="space-y-1">
       {#if !overlayControls}
       <input

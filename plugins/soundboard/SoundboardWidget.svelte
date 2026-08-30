@@ -3,6 +3,7 @@
   import type { HostApi } from "$lib/plugins/api";
   import { listSounds, onLibraryChange, type SoundRecord } from "./storage";
   import { soundGlyph } from "./glyph";
+  import { Tip } from "$lib/plugins/ui";
 
   // Card-less widget: the host mounts this with card: null - only the host
   // API matters here.
@@ -65,28 +66,32 @@
     /soundboard to add sounds
   </span>
 {:else}
-  <div
-    class="flex items-center gap-0.5"
-    aria-label="Soundboard"
-    title={blocked === "not-in-call"
-      ? "Join the call to play"
-      : blocked === "deafened"
-        ? "Undeafen to play"
-        : undefined}
-  >
+  <div class="flex items-center gap-0.5" aria-label="Soundboard">
     {#each sounds as sound (sound.slot)}
-      <button
-        type="button"
-        class="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded text-sm leading-none transition
-          {activeSlot === sound.slot ? 'bg-primary/25' : 'hover:bg-muted'}
-          disabled:cursor-not-allowed disabled:opacity-40"
-        disabled={!!blocked}
-        aria-label={`Play ${sound.name}`}
-        title={sound.name}
-        onclick={() => void play(sound)}
+      <!-- The app's Tip, not the browser tooltip - same chrome as every
+           other control, and it still shows on a disabled button. -->
+      <Tip
+        text={blocked === "not-in-call"
+          ? "Join the call to play"
+          : blocked === "deafened"
+            ? "Undeafen to play"
+            : sound.name}
       >
-        {soundGlyph(sound)}
-      </button>
+        {#snippet children(props)}
+          <button
+            {...props}
+            type="button"
+            class="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded text-sm leading-none transition
+              {activeSlot === sound.slot ? 'bg-primary/25' : 'hover:bg-muted'}
+              disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={!!blocked}
+            aria-label={`Play ${sound.name}`}
+            onclick={() => void play(sound)}
+          >
+            {soundGlyph(sound)}
+          </button>
+        {/snippet}
+      </Tip>
     {/each}
   </div>
 {/if}
