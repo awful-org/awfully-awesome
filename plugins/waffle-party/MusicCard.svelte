@@ -111,14 +111,27 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   $effect(() => {
     if (music.tickBy && music.tickBy !== selfDid) ensureClock(host, music.tickBy);
   });
-  const syncPosition = $derived(
-    projectedTickPosition(
-      stateTick(music),
-      clockEstimateFor(music.tickBy),
-      music.tickBy === selfDid,
-      Date.now()
-    ) ?? music.position
-  );
+  // Recomputed ONLY when the tick itself changes, never on unrelated state
+  // folds: music is a fresh object per fold, and a $derived reading
+  // Date.now() would mint a new projected value on every join or activity
+  // line - each one a changed position prop, each one a player seek.
+  // svelte-ignore state_referenced_locally -- seeded once; the effect below
+  // takes over. Seeding matters: effects run after mount, and the player is
+  // constructed with this prop's mount-time value.
+  let syncPosition = $state(untrack(() => music.position));
+  let lastTickKey = "";
+  $effect(() => {
+    const key = `${music.tickAtMs}|${music.tickBy}|${music.position}|${music.playing}|${music.currentIndex}`;
+    if (key === lastTickKey) return;
+    lastTickKey = key;
+    syncPosition =
+      projectedTickPosition(
+        stateTick(music),
+        clockEstimateFor(music.tickBy),
+        music.tickBy === selfDid,
+        Date.now()
+      ) ?? music.position;
+  });
   const mountedAt = Date.now();
   let departureSent = false;
   let canRecreate = $state(false);

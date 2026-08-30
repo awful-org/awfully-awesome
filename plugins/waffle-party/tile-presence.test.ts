@@ -139,10 +139,16 @@ describe("renderer handoff", () => {
   });
 
   it("requests authoritative synchronization on every owner or listener takeover", () => {
-    expect(rendererSyncUpdate("owner", "owner", 120.9, "unused")).toEqual({
+    const ownerUpdate = rendererSyncUpdate("owner", "owner", 120.9, "unused");
+    expect(ownerUpdate).toEqual({
       action: "seek",
       position: 120,
+      atMs: expect.any(Number),
     });
+    // The sender clock is what keeps the party's tick alive across a
+    // renderer switch - a seek without it nulls drift correction for
+    // everyone (the reducer treats a missing atMs as a legacy update).
+    expect((ownerUpdate as { atMs: number }).atMs).toBeGreaterThan(0);
     expect(rendererSyncUpdate("listener", "owner", 120.9, "request-1")).toEqual(
       {
         action: "resync",

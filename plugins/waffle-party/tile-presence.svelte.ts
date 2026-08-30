@@ -133,7 +133,7 @@ export function takeRendererPosition(
 }
 
 export type RendererSyncUpdate =
-  | { action: "seek"; position: number }
+  | { action: "seek"; position: number; atMs: number }
   | { action: "resync"; requestId: string; requesterDid: string };
 
 export function rendererSyncUpdate(
@@ -143,7 +143,10 @@ export function rendererSyncUpdate(
   requestId: string
 ): RendererSyncUpdate {
   return selfDid === ownerDid
-    ? { action: "seek", position: Math.floor(position) }
+    ? // atMs keeps the shared tick alive across a renderer switch: a seek
+      // without a sender clock nulls tickAtMs for the WHOLE party, killing
+      // drift correction at exactly the moment a handoff makes drift likely.
+      { action: "seek", position: Math.floor(position), atMs: Date.now() }
     : { action: "resync", requestId, requesterDid: selfDid };
 }
 

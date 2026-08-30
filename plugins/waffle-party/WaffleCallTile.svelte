@@ -66,14 +66,27 @@
   // Where the party is RIGHT NOW per the tick, not where it was when the
   // tick was written. Recomputes when the state changes; between changes
   // the drift loop below keeps the player honest.
-  const syncPosition = $derived(
-    projectedTickPosition(
-      stateTick(music),
-      clockEstimateFor(music.tickBy),
-      music.tickBy === selfDid,
-      Date.now()
-    ) ?? music.position
-  );
+  // Recomputed ONLY when the tick itself changes, never on unrelated state
+  // folds: music is a fresh object per fold, and a $derived reading
+  // Date.now() would mint a new projected value on every join or activity
+  // line - each one a changed position prop, each one a player seek.
+  // svelte-ignore state_referenced_locally -- seeded once; the effect below
+  // takes over. Seeding matters: effects run after mount, and the player is
+  // constructed with this prop's mount-time value.
+  let syncPosition = $state(untrack(() => music.position));
+  let lastTickKey = "";
+  $effect(() => {
+    const key = `${music.tickAtMs}|${music.tickBy}|${music.position}|${music.playing}|${music.currentIndex}`;
+    if (key === lastTickKey) return;
+    lastTickKey = key;
+    syncPosition =
+      projectedTickPosition(
+        stateTick(music),
+        clockEstimateFor(music.tickBy),
+        music.tickBy === selfDid,
+        Date.now()
+      ) ?? music.position;
+  });
   let playerLoading = $state(true);
   let activeResyncId = $state<string | null>(null);
   // Consume a parked card position only once when this renderer takes over.

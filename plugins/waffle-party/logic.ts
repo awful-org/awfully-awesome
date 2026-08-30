@@ -467,18 +467,26 @@ export function reduce(
       let currentIndex = music.currentIndex;
       let playing = music.playing;
       let position = music.position;
+      // The tick survives queue management that does not touch playback;
+      // it only dies with the position reset below - clearing it on every
+      // remove disabled drift correction for the whole party over an
+      // unrelated queue edit.
+      let tickAtMs = music.tickAtMs;
+      let tickBy = music.tickBy;
 
       if (currentIndex === data.index) {
         currentIndex =
           queue.length === 0 ? null : Math.min(data.index, queue.length - 1);
         playing = queue.length === 0 ? false : playing;
         position = 0;
+        tickAtMs = null;
+        tickBy = null;
       } else if (currentIndex !== null && currentIndex > data.index) {
         currentIndex -= 1;
       }
 
       return withActivity(
-        { ...music, queue, currentIndex, playing, position, tickAtMs: null, tickBy: null },
+        { ...music, queue, currentIndex, playing, position, tickAtMs, tickBy },
         ctx,
         "removed",
         removedVideoId

@@ -613,6 +613,43 @@ describe("watch ticks", () => {
     }
   });
 
+  it("carries the tick on play, pause and sync too", () => {
+    for (const data of [
+      { action: "play", position: 5, atMs: 1_700_000_000_000 },
+      { action: "pause", position: 5, atMs: 1_700_000_000_000 },
+    ]) {
+      const s = reduce(base(), { data } as never, ctx(`u-${data.action}`)) as never as MusicState;
+      expect(s.tickAtMs).toBe(1_700_000_000_000);
+      expect(s.tickBy).toBe("did:o");
+    }
+    // sync needs a responder, which needs a second member (the newest
+    // member is the joiner being synced and never responds).
+    const twoMembers = reduce(
+      base(),
+      { data: { action: "join" } } as never,
+      { senderDid: "did:b", senderName: "b", updateId: "u-j2", lamport: 2, ephemeral: false } as never
+    ) as never as MusicState;
+    const synced = reduce(
+      twoMembers,
+      { data: { action: "sync", index: 0, position: 5, playing: true, atMs: 1_700_000_000_000 } } as never,
+      ctx("u-sync")
+    ) as never as MusicState;
+    expect(synced.tickAtMs).toBe(1_700_000_000_000);
+    expect(synced.tickBy).toBe("did:o");
+  });
+
+  it("keeps the tick when a remove does not touch the playing track", () => {
+    let s = reduce(base(), { data: { action: "add", videoId: "jNQXAC9IVRw" } } as never, ctx("u-add")) as never as MusicState;
+    s = reduce(s, { data: { action: "seek", position: 42, atMs: 1_700_000_000_000 } } as never, ctx("u-seek")) as never as MusicState;
+    const after = reduce(s, { data: { action: "remove", index: 1 } } as never, ctx("u-rm")) as never as MusicState;
+    expect(after.queue).toHaveLength(1);
+    expect(after.tickAtMs).toBe(1_700_000_000_000);
+    // ...and clears it when the CURRENT track is removed (position resets).
+    const s2 = reduce(s, { data: { action: "remove", index: 0 } } as never, ctx("u-rm2")) as never as MusicState;
+    expect(s2.position).toBe(0);
+    expect(s2.tickAtMs).toBeNull();
+  });
+
   it("clears the tick on a track change - position 0 has no sender clock", () => {
     const ticked = reduce(base(), { data: { action: "seek", position: 42, atMs: 1_700_000_000_000 } } as never, ctx("u3")) as never as MusicState;
     const skipped = reduce(ticked, { data: { action: "skip" } } as never, ctx("u4")) as never as MusicState;
