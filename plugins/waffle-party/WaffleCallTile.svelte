@@ -1,18 +1,12 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import {
-    Play,
-    Pause,
-    SkipBack,
-    SkipForward,
-    LogIn,
-    Volume2,
-  } from "@lucide/svelte";
+  import { LogIn } from "@lucide/svelte";
   import type { HostApi } from "$lib/plugins/api";
   import type { Message } from "$lib/transport/transport.svelte";
   import { Tip } from "$lib/plugins/ui";
   import WafflePlayer from "./WafflePlayer.svelte";
-  import { type MusicState } from "./logic";
+  import WaffleSyncedControls from "./WaffleSyncedControls.svelte";
+  import { seekTarget, type MusicState } from "./logic";
   import {
     tilePresence,
     publishLiveDuration,
@@ -60,8 +54,7 @@
   const volume = $derived(audioVolume.value);
   let localPosition = $state(0);
   let duration = $state(0);
-  let seeking = $state(false);
-  let seekValue = $state(0);
+  let captions = $state(false);
   let playerLoading = $state(true);
   let activeResyncId = $state<string | null>(null);
   // Consume a parked card position only once when this renderer takes over.
@@ -240,17 +233,16 @@
     await send({ action: "seek", position });
   }
 
+  async function seekBy(delta: number) {
+    const at = player?.currentTime() ?? localPosition;
+    await seekTo(seekTarget(at, delta, duration));
+  }
+
   async function ended() {
     if (music.currentIndex !== null)
       await send({ action: "ended", index: music.currentIndex });
   }
 
-  function fmt(s: number): string {
-    if (!Number.isFinite(s) || s < 0) return "0:00";
-    const m = Math.floor(s / 60);
-    const r = Math.floor(s % 60);
-    return `${m}:${r.toString().padStart(2, "0")}`;
-  }
 </script>
 
 <div class="group/tile relative flex h-full w-full flex-col bg-black">
@@ -282,10 +274,10 @@
         position={handoffPosition ?? music.position}
         {volume}
         controls={false}
+        {captions}
         onPosition={(p) => {
           localPosition = p;
           publishLivePosition(p, music.playing);
-          if (!seeking) seekValue = p;
           if (
             handoffPosition !== null &&
             handoffIsReadyToRelease(
@@ -311,120 +303,28 @@
          none layer, so YouTube's own (unsyncable) UI is unreachable by
          construction - only elements that re-enable pointer events act. -->
 
-    <!-- Center play/pause: THE most common action deserves the biggest
-         target. It reveals itself when the cursor reaches the center; the
-         rest of the tile stays pass-through, so clicking anywhere else
-         still focuses the tile like every other stream. -->
-    <button
-      type="button"
-      onclick={(e) => {
-        e.stopPropagation();
-        void togglePlayback();
-      }}
-      aria-label={music.playing ? "Pause for everyone" : "Play for everyone"}
-      class="absolute left-1/2 top-1/2 z-20 grid size-14 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full bg-black/60 text-white opacity-0 transition-opacity {chromeVisible
-        ? 'pointer-events-auto hover:opacity-100 focus-visible:opacity-100'
-        : 'pointer-events-none'}"
-    >
-      {#if music.playing}<Pause class="size-6" />{:else}<Play
-          class="size-6"
-        />{/if}
-    </button>
-
-
-    <!-- Synced controls: the only controls that exist. pointer-events-auto
-         opts them back in from the host's pass-through layer; the
-         stopPropagation keeps a control click from doubling as the
-         placeholder's click-to-primary. -->
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div
-      onclick={(e) => e.stopPropagation()}
-      class="absolute inset-x-0 bottom-0 z-20 flex flex-col gap-1 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2 pt-8 transition-opacity focus-within:opacity-100 {chromeVisible
-        ? 'pointer-events-auto opacity-100'
-        : 'pointer-events-none opacity-0'}"
-    >
-      <input
-        type="range"
-        min="0"
-        max={Math.max(duration, 1)}
-        step="1"
-        bind:value={seekValue}
-        oninput={() => (seeking = true)}
-        onchange={() => {
-          seeking = false;
-          void seekTo(seekValue);
-        }}
-        aria-label="Seek (for everyone)"
-        class="h-1 w-full cursor-pointer accent-white"
-      />
-      <div class="flex items-center gap-1.5">
-        <Tip text="Previous track">
-          {#snippet children(props)}
-            <button
-              type="button"
-              {...props}
-              onclick={previous}
-              aria-label="Previous track"
-              class="cursor-pointer rounded bg-white/10 p-1.5 text-white hover:bg-white/20"
-            >
-              <SkipBack class="size-3.5" />
-            </button>
-          {/snippet}
-        </Tip>
-        <Tip
-          text={music.playing ? "Pause for everyone" : "Play for everyone"}
-        >
-          {#snippet children(props)}
-            <button
-              type="button"
-              {...props}
-              onclick={togglePlayback}
-              aria-label={music.playing
-                ? "Pause for everyone"
-                : "Play for everyone"}
-              class="cursor-pointer rounded bg-white/15 p-1.5 text-white hover:bg-white/25"
-            >
-              {#if music.playing}<Pause class="size-3.5" />{:else}<Play
-                  class="size-3.5"
-                />{/if}
-            </button>
-          {/snippet}
-        </Tip>
-        <Tip text="Next track">
-          {#snippet children(props)}
-            <button
-              type="button"
-              {...props}
-              onclick={skip}
-              aria-label="Next track"
-              class="cursor-pointer rounded bg-white/10 p-1.5 text-white hover:bg-white/20"
-            >
-              <SkipForward class="size-3.5" />
-            </button>
-          {/snippet}
-        </Tip>
-        <span class="font-mono text-[10px] text-white/70">
-          {fmt(seekValue)} / {fmt(duration)}
-        </span>
-        <span class="ml-auto flex items-center gap-1">
-          <Volume2 class="size-3.5 text-white/70" />
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={volume}
-            oninput={(event) => setVolume(Number(event.currentTarget.value))}
-            aria-label="Volume (only you)"
-            class="h-1 w-20 cursor-pointer accent-white"
-          />
-        </span>
-        <span class="font-mono text-[10px] text-white/70">
-          {#if music.currentIndex !== null}{music.currentIndex + 1}/{music.queue
-              .length}{/if}
-        </span>
-      </div>
-    </div>
+    <!-- The shared synced chrome: center play/pause, transport bar,
+         vignette. pointer-events discipline lives inside the component -
+         hidden chrome stays pass-through so clicking the tile still
+         focuses it like every other stream. -->
+    <WaffleSyncedControls
+      playing={music.playing}
+      position={localPosition}
+      {duration}
+      {volume}
+      {captions}
+      visible={chromeVisible}
+      queueLabel={music.currentIndex !== null
+        ? `${music.currentIndex + 1}/${music.queue.length}`
+        : ""}
+      onTogglePlay={() => void togglePlayback()}
+      onPrevious={() => void previous()}
+      onSkip={() => void skip()}
+      onSeek={(p) => void seekTo(p)}
+      onSeekBy={(d) => void seekBy(d)}
+      onVolume={setVolume}
+      onToggleCaptions={() => (captions = !captions)}
+    />
   {:else}
     <div
       class="grid h-full w-full place-items-center font-mono text-xs text-muted-foreground"

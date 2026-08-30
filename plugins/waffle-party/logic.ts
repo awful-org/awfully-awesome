@@ -500,3 +500,18 @@ export function reduce(
       return music;
   }
 }
+
+/**
+ * Where a relative seek lands: clamped so "back 10s" near the start hits 0
+ * and "forward 10s" near the end stops just short of it (seeking AT the
+ * duration fires "ended" and skips the track, which is not what a nudge
+ * forward means).
+ */
+export function seekTarget(
+  position: number,
+  delta: number,
+  duration: number
+): number {
+  const ceiling = duration > 0 ? Math.max(0, duration - 1) : Infinity;
+  return Math.min(Math.max(0, position + delta), ceiling);
+}

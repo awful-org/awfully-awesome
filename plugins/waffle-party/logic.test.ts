@@ -7,6 +7,7 @@ import {
   reduce,
   videoIdFromUrl,
   type MusicState,
+  seekTarget,
 } from "./logic";
 
 const ctx = (name = "Alice") => ({
@@ -564,5 +565,18 @@ describe("a properly owned party still works", () => {
   it("still turns away a stranger who never joined", () => {
     const after = update(owned(), { action: "add", videoId: second }, "Mallory");
     expect(after.queue).not.toContain(second);
+  });
+});
+
+describe("seekTarget", () => {
+  it("clamps a rewind at zero and a nudge at one second before the end", () => {
+    expect(seekTarget(4, -10, 300)).toBe(0);
+    expect(seekTarget(295, 10, 300)).toBe(299);
+    expect(seekTarget(100, 10, 300)).toBe(110);
+    expect(seekTarget(100, -10, 300)).toBe(90);
+  });
+
+  it("does not cap when the duration is unknown", () => {
+    expect(seekTarget(100, 10, 0)).toBe(110);
   });
 });

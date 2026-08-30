@@ -16,9 +16,11 @@
   import type { Message } from "$lib/transport/transport.svelte";
   import { Tip } from "$lib/plugins/ui";
   import WafflePlayer from "./WafflePlayer.svelte";
+  import WaffleSyncedControls from "./WaffleSyncedControls.svelte";
   import LoopButton, { queueButtonClass } from "./LoopButton.svelte";
   import {
     playlistIdFromUrl,
+    seekTarget,
     videoIdFromUrl,
     type MusicState,
   } from "./logic";
@@ -75,6 +77,13 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   let url = $state("");
   let error = $state("");
   let player = $state<WafflePlayer | null>(null);
+  let playerHover = $state(false);
+  let captions = $state(false);
+  // The classic below-player controls only serve the surfaces that mount no
+  // local player (the call tile is rendering); when the card IS the
+  // renderer, the overlay chrome on the player owns transport, seek and
+  // volume - the same chrome the call tile has.
+  const overlayControls = $derived(tilePresence.count === 0);
   // Seeded from the shared position, then owned locally (the scrubber and
   // the renderer handoff both write it), so this must NOT track music.
   let localPosition = $state(untrack(() => music.position));
@@ -302,6 +311,10 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     const mode =
       music.loop === "off" ? "track" : music.loop === "track" ? "queue" : "off";
     await send({ action: "loop", mode });
+  }
+  async function seekBy(delta: number) {
+    const at = player?.currentTime() ?? rendererPosition;
+    await send({ action: "seek", position: seekTarget(at, delta, rendererDuration) });
   }
   function commitSeek() {
     seeking = false;
@@ -543,6 +556,12 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
           ▶ Rendering in the call
         </p>
       {:else}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="relative"
+        onpointerenter={() => (playerHover = true)}
+        onpointerleave={() => (playerHover = false)}
+      >
       <WafflePlayer
         bind:this={player}
         videoId={current}
@@ -550,6 +569,8 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
         playing={current ? music.playing : false}
         position={transition?.position ?? music.position}
         {volume}
+        controls={false}
+        {captions}
         onPosition={(value) => {
           localPosition = value;
           if (
@@ -571,7 +592,31 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
         onPlayable={() => (playerLoading = false)}
         onError={() => (playerLoading = false)}
         onPlaylist={selfDid === music.ownerDid ? resolvePlaylist : undefined}
-      />{#if playerLoading}<p class="text-center text-xs text-muted-foreground">
+      />
+      {#if current}
+        <!-- The same synced chrome the call tile renders: center
+             play/pause, transport bar, vignette - revealed on hover. -->
+        <WaffleSyncedControls
+          playing={music.playing}
+          position={localPosition}
+          duration={rendererDuration}
+          {volume}
+          {captions}
+          visible={playerHover}
+          queueLabel={music.currentIndex !== null
+            ? `${music.currentIndex + 1}/${music.queue.length}`
+            : ""}
+          onTogglePlay={() => void togglePlayback()}
+          onPrevious={() => void previous()}
+          onSkip={() => void send({ action: "skip" }, "Skipping…")}
+          onSeek={(p) => void send({ action: "seek", position: p })}
+          onSeekBy={(d) => void seekBy(d)}
+          onVolume={setVolume}
+          onToggleCaptions={() => (captions = !captions)}
+        />
+      {/if}
+      </div>
+      {#if playerLoading}<p class="text-center text-xs text-muted-foreground">
           Loading player…
         </p>{/if}
       {/if}
@@ -599,6 +644,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       Reading playlist…
     </p>{/if}
   {#if !music.closed && joined}<div class="space-y-1">
+      {#if !overlayControls}
       <input
         class="w-full"
         type="range"
@@ -617,9 +663,11 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       <div class="-mt-2 pb-1 text-right font-mono text-[11px] text-muted-foreground">
         {formatTime(displayedPosition)} / {formatTime(rendererDuration)}
       </div>
+      {/if}
       <div class="space-y-2 text-xs">
         <div class="flex items-center gap-2">
           <div class="flex gap-2">
+          {#if !overlayControls}
           <Tip text="Previous track">
             {#snippet children(props)}
               <button
@@ -651,6 +699,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
               >
             {/snippet}
           </Tip>
+          {/if}
           <Tip text={queueOpen ? "Hide queue" : "Show queue"}>
             {#snippet children(props)}
               <button
@@ -702,6 +751,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
              scrubbing on every pixel is expensive; volume has no such
              reason. The readout is here because a bare track with no number
              gives no way to tell where you are or where you were. -->
+        {#if !overlayControls}
         <label class="flex items-center gap-2"
           >Vol <input
             class="w-1/4 max-w-24"
@@ -720,6 +770,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
             class="w-8 shrink-0 text-right tabular-nums">{volume}%</span
           ></label
         >
+        {/if}
       </div>
     </div>
     {#if queueOpen}

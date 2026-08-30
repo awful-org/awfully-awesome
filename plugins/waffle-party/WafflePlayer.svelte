@@ -87,6 +87,9 @@
     volume?: number;
     /** false = strip YouTube's own controls; only synced controls remain. */
     controls?: boolean;
+    /** Viewer-local subtitles. YouTube's caption module is per-iframe, so
+     *  each viewer chooses their own; nothing syncs. */
+    captions?: boolean;
     onPosition?: (position: number) => void;
     onDuration?: (duration: number) => void;
     onEnded?: () => void;
@@ -103,6 +106,7 @@
     position,
     volume = 100,
     controls = true,
+    captions = false,
     onPosition,
     onDuration,
     onEnded,
@@ -126,6 +130,8 @@
     destroy(): void;
     cuePlaylist(options: { listType: "playlist"; list: string }): void;
     getPlaylist(): string[];
+    loadModule?(module: string): void;
+    unloadModule?(module: string): void;
   }
   interface WaffleEmbedApi {
     Player: new (
@@ -213,12 +219,28 @@
       if (loaded !== videoId) {
         loaded = videoId;
         player.loadVideoById(videoId, position);
+        appliedCaptions = null;
       } else player.seekTo(position, true);
     }
     // Playback state must be asserted even when the position tuple did not
     // change: a newly-created iframe can report the same position while still
     // paused after a renderer handoff.
     playing ? player.playVideo() : player.pauseVideo();
+  }
+
+  // The captions module only exists once the player is ready, and toggling
+  // must survive a video change (loadVideoById resets modules) - re-assert
+  // on both. Guarded: older embeds ship without loadModule.
+  let appliedCaptions: boolean | null = null;
+  function applyCaptions() {
+    if (!player || !ready) return;
+    try {
+      if (captions) player.loadModule?.("captions");
+      else player.unloadModule?.("captions");
+      appliedCaptions = captions;
+    } catch {
+      // The embed has no captions module; the toggle is a no-op there.
+    }
   }
 
   let reportedOnce = false;
@@ -318,6 +340,7 @@
     position;
     volume;
     sync();
+    if (captions !== appliedCaptions) applyCaptions();
     if (!playing) {
       autoplayResume.pause();
     } else if (ready && player && !autoplayResume.playerIsPlaying(player)) {
