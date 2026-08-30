@@ -61,7 +61,7 @@
     if (music.currentIndex !== null && music.currentIndex > 0) {
       await send({ action: "select", index: music.currentIndex - 1 });
     } else {
-      await send({ action: "seek", position: 0 });
+      await send({ action: "seek", position: 0, atMs: Date.now() });
     }
   }
 </script>
@@ -92,6 +92,7 @@
           onclick={() =>
             send({
               action: music.playing ? "pause" : "play",
+              atMs: Date.now(),
               // The live player's position when one renders in this tab; the
               // stale synced one rewound the whole party on pause otherwise.
               position: livePosition(music.position),

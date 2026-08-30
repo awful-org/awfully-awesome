@@ -4,8 +4,8 @@
     Pause,
     SkipBack,
     SkipForward,
-    Rewind,
-    FastForward,
+    RotateCcw,
+    RotateCw,
     Volume2,
     Subtitles,
   } from "@lucide/svelte";
@@ -70,12 +70,18 @@
      the bottom transport bar. The root is pointer-inert; only the controls
      opt back in, so the surface underneath keeps its click behavior. -->
 <div class="pointer-events-none absolute inset-0 z-20">
-  <!-- Edge darkening: always on, a touch stronger while the chrome shows. -->
+  <!-- Edge darkening: faded gradients on every side plus an inset glow,
+       always on and stronger while the chrome shows - the point is that
+       YouTube's own branding recedes and the party's UI reads as the
+       player. -->
   <div
     class="absolute inset-0 transition-opacity duration-300 {visible
       ? 'opacity-100'
-      : 'opacity-60'}"
-    style="box-shadow: inset 0 0 48px 12px rgba(0,0,0,0.55)"
+      : 'opacity-80'}"
+    style="background:
+        linear-gradient(to right, rgba(0,0,0,0.6), transparent 16%, transparent 84%, rgba(0,0,0,0.6)),
+        linear-gradient(to bottom, rgba(0,0,0,0.55), transparent 20%, transparent 65%, rgba(0,0,0,0.8));
+      box-shadow: inset 0 0 80px 20px rgba(0,0,0,0.6)"
     aria-hidden="true"
   ></div>
 
@@ -86,9 +92,9 @@
       onTogglePlay();
     }}
     aria-label={playing ? "Pause for everyone" : "Play for everyone"}
-    class="absolute left-1/2 top-1/2 grid size-14 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full bg-black/60 text-white opacity-0 transition hover:scale-105 hover:bg-black/75 focus-visible:opacity-100 {visible
-      ? 'pointer-events-auto hover:opacity-100'
-      : 'pointer-events-none'}"
+    class="absolute left-1/2 top-1/2 grid size-14 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full bg-black/60 text-white transition hover:scale-105 hover:bg-black/75 {visible
+      ? 'pointer-events-auto opacity-100'
+      : 'pointer-events-none opacity-0'}"
   >
     {#if playing}<Pause class="size-6" />{:else}<Play class="size-6" />{/if}
   </button>
@@ -138,7 +144,7 @@
             aria-label="Back 10 seconds (for everyone)"
             class="cursor-pointer rounded bg-white/10 p-1.5 text-white transition hover:bg-white/25"
           >
-            <Rewind class="size-3.5" />
+            <RotateCcw class="size-3.5" />
           </button>
         {/snippet}
       </Tip>
@@ -166,7 +172,7 @@
             aria-label="Forward 10 seconds (for everyone)"
             class="cursor-pointer rounded bg-white/10 p-1.5 text-white transition hover:bg-white/25"
           >
-            <FastForward class="size-3.5" />
+            <RotateCw class="size-3.5" />
           </button>
         {/snippet}
       </Tip>

@@ -21,9 +21,12 @@
   import {
     playlistIdFromUrl,
     seekTarget,
+    stateTick,
     videoIdFromUrl,
     type MusicState,
   } from "./logic";
+  import { driftSeekTarget, projectedTickPosition } from "./watch-drift";
+  import { clockEstimateFor, ensureClock } from "./clock";
   import {
     tilePresence,
     registerPositionSource,
@@ -103,6 +106,19 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   // Re-read on reconnect below, so it stays $state - it just must not
   // capture host reactively here.
   let selfDid = $state(untrack(() => host.selfDid()));
+  let lastDriftSeekAt = 0;
+  // Fresh clock offset to the current tick's author, for projection.
+  $effect(() => {
+    if (music.tickBy && music.tickBy !== selfDid) ensureClock(host, music.tickBy);
+  });
+  const syncPosition = $derived(
+    projectedTickPosition(
+      stateTick(music),
+      clockEstimateFor(music.tickBy),
+      music.tickBy === selfDid,
+      Date.now()
+    ) ?? music.position
+  );
   const mountedAt = Date.now();
   let departureSent = false;
   let canRecreate = $state(false);
@@ -300,7 +316,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       player?.currentTime() ??
       (tilePresence.count > 0 ? livePosition(music.position) : rendererPosition);
     await send(
-      { action: music.playing ? "pause" : "play", position },
+      { action: music.playing ? "pause" : "play", position, atMs: Date.now() },
       music.playing ? "Pausing…" : "Starting…"
     );
   }
@@ -314,12 +330,16 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   }
   async function seekBy(delta: number) {
     const at = player?.currentTime() ?? rendererPosition;
-    await send({ action: "seek", position: seekTarget(at, delta, rendererDuration) });
+    await send({
+      action: "seek",
+      position: seekTarget(at, delta, rendererDuration),
+      atMs: Date.now(),
+    });
   }
   function commitSeek() {
     seeking = false;
     transition = null;
-    void send({ action: "seek", position: seekValue });
+    void send({ action: "seek", position: seekValue, atMs: Date.now() });
   }
   function formatTime(seconds: number): string {
     if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
@@ -396,6 +416,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
         (tilePresence.count > 0 ? livePosition(music.position) : rendererPosition),
       playing: music.playing,
       duration,
+      atMs: Date.now(),
       ...(request
         ? { requestId: request.id, targetDid: request.requesterDid }
         : {}),
@@ -567,12 +588,27 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
         videoId={current}
         playlistId={current ? null : pendingPlaylist}
         playing={current ? music.playing : false}
-        position={transition?.position ?? music.position}
+        position={transition?.position ?? syncPosition}
         {volume}
         controls={false}
         {captions}
         onPosition={(value) => {
           localPosition = value;
+          // Same drift correction as the call tile: local seek only, never
+          // mid-handoff, never into a loading iframe. See watch-drift.ts.
+          if (!playerLoading && !transition) {
+            const target = driftSeekTarget(
+              stateTick(music),
+              clockEstimateFor(music.tickBy),
+              music.tickBy === selfDid,
+              { position: value, paused: !music.playing },
+              Date.now()
+            );
+            if (target !== null && Date.now() - lastDriftSeekAt > 5000) {
+              lastDriftSeekAt = Date.now();
+              player?.seekLocal(target);
+            }
+          }
           if (
             transition &&
             handoffIsReadyToRelease(
@@ -609,7 +645,8 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
           onTogglePlay={() => void togglePlayback()}
           onPrevious={() => void previous()}
           onSkip={() => void send({ action: "skip" }, "Skipping…")}
-          onSeek={(p) => void send({ action: "seek", position: p })}
+          onSeek={(p) =>
+            void send({ action: "seek", position: p, atMs: Date.now() })}
           onSeekBy={(d) => void seekBy(d)}
           onVolume={setVolume}
           onToggleCaptions={() => (captions = !captions)}

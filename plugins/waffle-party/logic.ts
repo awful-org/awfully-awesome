@@ -27,6 +27,17 @@ export interface MusicState {
   currentIndex: number | null;
   playing: boolean;
   position: number;
+  /**
+   * When `position` was true on the SENDER's wall clock (the $lib/plugins/
+   * watch tick model): a bare position ages the moment it is written, and
+   * two peers reading it at different instants land in different places.
+   * Null for legacy updates and for track changes, where position 0 has no
+   * sender clock to project against - consumers then fall back to the raw
+   * position, which is exactly the old behavior.
+   */
+  tickAtMs: number | null;
+  /** Whose clock tickAtMs is on (ctx.senderDid, host-verified). */
+  tickBy: string | null;
   activity: Activity[];
   /** Total activity entries EVER, monotonic. The array itself is capped
    *  (only the tail is rendered), so length cannot be used as a "something
@@ -141,6 +152,8 @@ export function initialState(cardData: unknown): MusicState {
     currentIndex,
     playing: currentIndex !== null,
     position: 0,
+    tickAtMs: null,
+    tickBy: null,
     activity: [],
     activitySeq: 0,
     loop: "off",
@@ -160,6 +173,26 @@ function validIndex(index: unknown, queue: string[]): index is number {
     index >= 0 &&
     index < queue.length
   );
+}
+
+/** Sender wall clock for a tick: epoch ms inside a sane century. */
+function validAtMs(atMs: unknown): atMs is number {
+  return (
+    typeof atMs === "number" &&
+    Number.isFinite(atMs) &&
+    atMs > 1e12 &&
+    atMs < 1e13
+  );
+}
+
+/** The tick fields a position-bearing action carries (or clears). */
+function tickOf(
+  data: { atMs?: unknown },
+  ctx: { senderDid: string }
+): { tickAtMs: number | null; tickBy: string | null } {
+  return validAtMs(data.atMs)
+    ? { tickAtMs: data.atMs, tickBy: ctx.senderDid }
+    : { tickAtMs: null, tickBy: null };
 }
 
 function validPosition(position: unknown): position is number {
@@ -198,24 +231,26 @@ function withActivity(
 
 function nextTrack(music: MusicState): MusicState {
   if (music.currentIndex === null) return music;
-  if (music.loop === "track") return { ...music, position: 0 };
+  if (music.loop === "track")
+    return { ...music, position: 0, tickAtMs: null, tickBy: null };
   const next = music.currentIndex + 1;
   if (next < music.queue.length)
-    return { ...music, currentIndex: next, position: 0 };
+    return { ...music, currentIndex: next, position: 0, tickAtMs: null, tickBy: null };
   return music.loop === "queue" && music.queue.length
-    ? { ...music, currentIndex: 0, position: 0 }
-    : { ...music, currentIndex: null, playing: false, position: 0 };
+    ? { ...music, currentIndex: 0, position: 0, tickAtMs: null, tickBy: null }
+    : { ...music, currentIndex: null, playing: false, position: 0, tickAtMs: null, tickBy: null };
 }
 
 function previousTrack(music: MusicState): MusicState {
   if (music.currentIndex === null) return music;
-  if (music.loop === "track") return { ...music, position: 0 };
+  if (music.loop === "track")
+    return { ...music, position: 0, tickAtMs: null, tickBy: null };
   const previous = music.currentIndex - 1;
   if (previous >= 0)
-    return { ...music, currentIndex: previous, position: 0 };
+    return { ...music, currentIndex: previous, position: 0, tickAtMs: null, tickBy: null };
   return music.loop === "queue" && music.queue.length
-    ? { ...music, currentIndex: music.queue.length - 1, position: 0 }
-    : { ...music, position: 0 };
+    ? { ...music, currentIndex: music.queue.length - 1, position: 0, tickAtMs: null, tickBy: null }
+    : { ...music, position: 0, tickAtMs: null, tickBy: null };
 }
 
 export function reduce(
@@ -326,6 +361,7 @@ export function reduce(
         currentIndex: data.index,
         position: data.position,
         playing: data.playing,
+        ...tickOf(data, ctx),
         syncRequest: targeted ? undefined : music.syncRequest,
         syncResponse: targeted,
       };
@@ -398,7 +434,7 @@ export function reduce(
     case "select": {
       if (!validIndex(data.index, music.queue)) return music;
       return withActivity(
-        { ...music, currentIndex: data.index, position: 0 },
+        { ...music, currentIndex: data.index, position: 0, tickAtMs: null, tickBy: null },
         ctx,
         "selected",
         music.queue[data.index]
@@ -442,7 +478,7 @@ export function reduce(
       }
 
       return withActivity(
-        { ...music, queue, currentIndex, playing, position },
+        { ...music, queue, currentIndex, playing, position, tickAtMs: null, tickBy: null },
         ctx,
         "removed",
         removedVideoId
@@ -468,7 +504,7 @@ export function reduce(
         return music;
       if (music.playing && music.position === data.position) return music;
       return withActivity(
-        { ...music, playing: true, position: data.position },
+        { ...music, playing: true, position: data.position, ...tickOf(data, ctx) },
         ctx,
         "played",
         music.queue[music.currentIndex]
@@ -479,7 +515,7 @@ export function reduce(
         return music;
       if (!music.playing && music.position === data.position) return music;
       return withActivity(
-        { ...music, playing: false, position: data.position },
+        { ...music, playing: false, position: data.position, ...tickOf(data, ctx) },
         ctx,
         "paused",
         music.queue[music.currentIndex]
@@ -490,7 +526,7 @@ export function reduce(
         return music;
       if (music.position === data.position) return music;
       return withActivity(
-        { ...music, position: data.position },
+        { ...music, position: data.position, ...tickOf(data, ctx) },
         ctx,
         "seeked",
         music.queue[music.currentIndex]
@@ -514,4 +550,24 @@ export function seekTarget(
 ): number {
   const ceiling = duration > 0 ? Math.max(0, duration - 1) : Infinity;
   return Math.min(Math.max(0, position + delta), ceiling);
+}
+
+/**
+ * The state's position as a $lib/plugins/watch tick, or null when the last
+ * position write carried no sender clock (legacy update, track change) -
+ * consumers fall back to the raw position then. rate is always 1: YouTube's
+ * iframe rounds fractional playback rates, so this party never plays off
+ * unity. seq is unused by the control law and pinned to 0.
+ */
+export function stateTick(
+  music: Pick<MusicState, "playing" | "position" | "tickAtMs">
+): { paused: boolean; position: number; atMs: number; rate: number; seq: number } | null {
+  if (music.tickAtMs === null) return null;
+  return {
+    paused: !music.playing,
+    position: music.position,
+    atMs: music.tickAtMs,
+    rate: 1,
+    seq: 0,
+  };
 }

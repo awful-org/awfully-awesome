@@ -6,7 +6,9 @@
   import { Tip } from "$lib/plugins/ui";
   import WafflePlayer from "./WafflePlayer.svelte";
   import WaffleSyncedControls from "./WaffleSyncedControls.svelte";
-  import { seekTarget, type MusicState } from "./logic";
+  import { seekTarget, stateTick, type MusicState } from "./logic";
+  import { driftSeekTarget, projectedTickPosition } from "./watch-drift";
+  import { clockEstimateFor, ensureClock } from "./clock";
   import {
     tilePresence,
     publishLiveDuration,
@@ -55,6 +57,23 @@
   let localPosition = $state(0);
   let duration = $state(0);
   let captions = $state(false);
+  let lastDriftSeekAt = 0;
+  // Keep a fresh clock offset to whoever wrote the current tick, so its
+  // position projects onto this machine's clock.
+  $effect(() => {
+    if (music.tickBy && music.tickBy !== selfDid) ensureClock(host, music.tickBy);
+  });
+  // Where the party is RIGHT NOW per the tick, not where it was when the
+  // tick was written. Recomputes when the state changes; between changes
+  // the drift loop below keeps the player honest.
+  const syncPosition = $derived(
+    projectedTickPosition(
+      stateTick(music),
+      clockEstimateFor(music.tickBy),
+      music.tickBy === selfDid,
+      Date.now()
+    ) ?? music.position
+  );
   let playerLoading = $state(true);
   let activeResyncId = $state<string | null>(null);
   // Consume a parked card position only once when this renderer takes over.
@@ -202,6 +221,7 @@
       position: player?.currentTime() ?? localPosition,
       playing: music.playing,
       duration,
+      atMs: Date.now(),
       ...(request
         ? { requestId: request.id, targetDid: request.requesterDid }
         : {}),
@@ -218,7 +238,11 @@
 
   async function togglePlayback() {
     const position = player?.currentTime() ?? localPosition;
-    await send({ action: music.playing ? "pause" : "play", position });
+    await send({
+      action: music.playing ? "pause" : "play",
+      position,
+      atMs: Date.now(),
+    });
   }
 
   async function skip() {
@@ -230,7 +254,7 @@
   }
 
   async function seekTo(position: number) {
-    await send({ action: "seek", position });
+    await send({ action: "seek", position, atMs: Date.now() });
   }
 
   async function seekBy(delta: number) {
@@ -271,13 +295,31 @@
         bind:this={player}
         videoId={current}
         playing={music.playing}
-        position={handoffPosition ?? music.position}
+        position={handoffPosition ?? syncPosition}
         {volume}
         controls={false}
         {captions}
         onPosition={(p) => {
           localPosition = p;
           publishLivePosition(p, music.playing);
+          // Drift correction, once a second on the reporter's beat: seek
+          // only when the projected party position and this player disagree
+          // past the watch library's threshold. Rate nudges do not exist on
+          // YouTube (fractional rates round away), and a correction never
+          // fires mid-handoff or into a loading iframe.
+          if (!playerLoading && handoffPosition === null) {
+            const target = driftSeekTarget(
+              stateTick(music),
+              clockEstimateFor(music.tickBy),
+              music.tickBy === selfDid,
+              { position: p, paused: !music.playing },
+              Date.now()
+            );
+            if (target !== null && Date.now() - lastDriftSeekAt > 5000) {
+              lastDriftSeekAt = Date.now();
+              player?.seekLocal(target);
+            }
+          }
           if (
             handoffPosition !== null &&
             handoffIsReadyToRelease(

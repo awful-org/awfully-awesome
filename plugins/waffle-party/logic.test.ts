@@ -6,8 +6,9 @@ import {
   QUEUE_CAP,
   reduce,
   videoIdFromUrl,
-  type MusicState,
   seekTarget,
+  stateTick,
+  type MusicState,
 } from "./logic";
 
 const ctx = (name = "Alice") => ({
@@ -90,6 +91,8 @@ describe("music reducer", () => {
       ownerDid: "did:Alice",
       members: new Map([["did:Alice", "Host"]]),
       playlistRequests: [],
+      tickAtMs: null,
+      tickBy: null,
     });
     expect(party({ videoId: "invalid" }).queue).toEqual([]);
   });
@@ -578,5 +581,42 @@ describe("seekTarget", () => {
 
   it("does not cap when the duration is unknown", () => {
     expect(seekTarget(100, 10, 0)).toBe(110);
+  });
+});
+
+describe("watch ticks", () => {
+  const base = () =>
+    reduce(
+      initialState({ videoId: "dQw4w9WgXcQ0".slice(0, 11), ownerDid: "did:o" }),
+      { data: { action: "join" } } as never,
+      { senderDid: "did:o", senderName: "o", updateId: "u0", lamport: 1, ephemeral: false } as never
+    ) as ReturnType<typeof initialState>;
+
+  const ctx = (id: string) =>
+    ({ senderDid: "did:o", senderName: "o", updateId: id, lamport: 2, ephemeral: false }) as never;
+
+  it("stores the sender clock and author on a position-bearing action", () => {
+    const s = reduce(base(), { data: { action: "seek", position: 42, atMs: 1_700_000_000_000 } } as never, ctx("u1")) as never as MusicState;
+    expect(s.position).toBe(42);
+    expect(s.tickAtMs).toBe(1_700_000_000_000);
+    expect(s.tickBy).toBe("did:o");
+    const tick = stateTick(s);
+    expect(tick).toEqual({ paused: !s.playing, position: 42, atMs: 1_700_000_000_000, rate: 1, seq: 0 });
+  });
+
+  it("treats a missing or absurd atMs as no tick (legacy behavior)", () => {
+    for (const atMs of [undefined, "soon", -5, 1e14, Number.NaN]) {
+      const s = reduce(base(), { data: { action: "seek", position: 9, atMs } } as never, ctx("u2")) as never as MusicState;
+      expect(s.position).toBe(9);
+      expect(s.tickAtMs).toBeNull();
+      expect(stateTick(s)).toBeNull();
+    }
+  });
+
+  it("clears the tick on a track change - position 0 has no sender clock", () => {
+    const ticked = reduce(base(), { data: { action: "seek", position: 42, atMs: 1_700_000_000_000 } } as never, ctx("u3")) as never as MusicState;
+    const skipped = reduce(ticked, { data: { action: "skip" } } as never, ctx("u4")) as never as MusicState;
+    expect(skipped.tickAtMs).toBeNull();
+    expect(skipped.tickBy).toBeNull();
   });
 });

@@ -192,6 +192,17 @@
     return youtubeApiPromise as Promise<WaffleEmbedApi>;
   }
 
+  /**
+   * Local-only alignment seek (watch-sync drift correction). Deliberately
+   * NOT a shared action and deliberately not run through sync(): the props
+   * tuple stays untouched, so the next prop-driven sync neither repeats nor
+   * fights this.
+   */
+  export function seekLocal(position: number): void {
+    if (!player || !ready || typeof player.seekTo !== "function") return;
+    player.seekTo(position, true);
+  }
+
   export function currentTime(): number {
     // The YT.Player object grows its API only after the iframe handshake;
     // the 1s reporter starts before that and crashed on the missing method.
