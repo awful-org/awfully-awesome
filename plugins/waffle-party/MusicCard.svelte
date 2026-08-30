@@ -35,6 +35,7 @@
     parkHandoff,
     handoffIsReadyToRelease,
     takeParkedRendererControl,
+    rendererSyncUpdate,
     type RendererHandoff,
   } from "./tile-presence.svelte";
   import { cachedTitle, fetchTitle } from "./titles";
@@ -269,8 +270,13 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   // parked its live position - re-sync the party to it. Everyone else's
   // player is already ~there, so the seek is imperceptible to them and
   // saves US from restarting at the stale point.
+  let tileWasRendering = false;
   $effect(() => {
-    if (tilePresence.count > 0 || !joined || !current || music.closed) return;
+    if (tilePresence.count > 0) {
+      tileWasRendering = true;
+      return;
+    }
+    if (!joined || !current || music.closed) return;
     const requestId = selfDid === music.ownerDid ? "" : crypto.randomUUID();
     const takeover = takeParkedRendererControl(
       current,
@@ -279,6 +285,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       requestId
     );
     if (takeover) {
+      tileWasRendering = false;
       const h = takeover.handoff;
       // This is a fresh iframe even when the track did not change. Do not let
       // the previous card player's ready state release the handoff early.
@@ -291,6 +298,35 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       syncedJoinCount = music.activitySeq;
       if (takeover.update.action === "resync") activeResyncId = requestId;
       void send(takeover.update);
+    } else if (tileWasRendering) {
+      // The tile stood down but nothing was parked - a teardown-order race
+      // (the player unmounting before the cleanup read it), an expired
+      // handoff, anything. Its last PUBLISHED position is still the best
+      // truth held anywhere; without this the fresh card player fell back
+      // to the stale synced position, usually second 0 of the video.
+      tileWasRendering = false;
+      const live = livePosition(music.position);
+      if (live > music.position + 3) {
+        playerLoading = true;
+        transition = {
+          token: 0,
+          position: live,
+          duration: liveDurationState.duration || duration || 0,
+          playing: music.playing,
+          at: Date.now(),
+        };
+        transitionNow = Date.now();
+        localPosition = live;
+        syncedJoinCount = music.activitySeq;
+        const update = rendererSyncUpdate(
+          selfDid,
+          music.ownerDid,
+          live,
+          requestId
+        );
+        if (update.action === "resync") activeResyncId = requestId;
+        void send(update);
+      }
     }
   });
 
@@ -652,6 +688,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
           {volume}
           {captions}
           visible={playerHover}
+          vignetteBoost
           queueLabel={music.currentIndex !== null
             ? `${music.currentIndex + 1}/${music.queue.length}`
             : ""}

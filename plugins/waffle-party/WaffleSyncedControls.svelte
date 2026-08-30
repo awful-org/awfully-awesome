@@ -22,6 +22,9 @@
      *  own hover. Hidden chrome is also pointer-inert, so the surface
      *  underneath keeps its own click behavior. */
     visible: boolean;
+    /** Heavier edge darkening - the message card sits inside the chat, so
+     *  it needs more contrast to read as "our" player than the call tile. */
+    vignetteBoost?: boolean;
     /** "3/12" queue readout; empty hides it. */
     queueLabel?: string;
     onTogglePlay: () => void;
@@ -40,6 +43,7 @@
     volume,
     captions,
     visible,
+    vignetteBoost = false,
     queueLabel = "",
     onTogglePlay,
     onPrevious,
@@ -55,6 +59,21 @@
   $effect(() => {
     if (!seeking) seekValue = position;
   });
+
+  // Hover preview: the timestamp you'd jump to if you clicked here.
+  let hoverTime = $state<number | null>(null);
+  let hoverX = $state(0);
+  function onSeekHover(event: PointerEvent): void {
+    const el = event.currentTarget as HTMLInputElement;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const ratio = Math.min(
+      1,
+      Math.max(0, (event.clientX - rect.left) / rect.width)
+    );
+    hoverTime = ratio * Math.max(duration, 1);
+    hoverX = ratio * rect.width;
+  }
 
   function fmt(s: number): string {
     if (!Number.isFinite(s) || s < 0) return "0:00";
@@ -78,10 +97,15 @@
     class="absolute inset-0 transition-opacity duration-300 {visible
       ? 'opacity-100'
       : 'opacity-80'}"
-    style="background:
+    style={vignetteBoost
+      ? `background:
+        linear-gradient(to right, rgba(0,0,0,0.85), transparent 20%, transparent 80%, rgba(0,0,0,0.85)),
+        linear-gradient(to bottom, rgba(0,0,0,0.8), transparent 25%, transparent 60%, rgba(0,0,0,0.92));
+      box-shadow: inset 0 0 110px 40px rgba(0,0,0,0.75)`
+      : `background:
         linear-gradient(to right, rgba(0,0,0,0.6), transparent 16%, transparent 84%, rgba(0,0,0,0.6)),
         linear-gradient(to bottom, rgba(0,0,0,0.55), transparent 20%, transparent 65%, rgba(0,0,0,0.8));
-      box-shadow: inset 0 0 80px 20px rgba(0,0,0,0.6)"
+      box-shadow: inset 0 0 80px 20px rgba(0,0,0,0.6)`}
     aria-hidden="true"
   ></div>
 
@@ -107,20 +131,32 @@
       ? 'pointer-events-auto opacity-100'
       : 'pointer-events-none opacity-0'}"
   >
-    <input
-      type="range"
-      min="0"
-      max={Math.max(duration, 1)}
-      step="1"
-      bind:value={seekValue}
-      oninput={() => (seeking = true)}
-      onchange={() => {
-        seeking = false;
-        onSeek(seekValue);
-      }}
-      aria-label="Seek (for everyone)"
-      class="h-1 w-full cursor-pointer accent-white"
-    />
+    <div class="relative">
+      {#if hoverTime !== null}
+        <span
+          class="pointer-events-none absolute bottom-full mb-1.5 -translate-x-1/2 rounded bg-black/85 px-1.5 py-0.5 font-mono text-[10px] text-white"
+          style="left: {hoverX}px"
+        >
+          {fmt(hoverTime)}
+        </span>
+      {/if}
+      <input
+        type="range"
+        min="0"
+        max={Math.max(duration, 1)}
+        step="1"
+        bind:value={seekValue}
+        oninput={() => (seeking = true)}
+        onchange={() => {
+          seeking = false;
+          onSeek(seekValue);
+        }}
+        onpointermove={onSeekHover}
+        onpointerleave={() => (hoverTime = null)}
+        aria-label="Seek (for everyone)"
+        class="h-1 w-full cursor-pointer accent-white"
+      />
+    </div>
     <div class="flex items-center gap-1.5">
       <Tip text="Previous track">
         {#snippet children(props)}

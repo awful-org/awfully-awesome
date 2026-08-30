@@ -23,7 +23,7 @@
 </script>
 
 <script lang="ts">
-  import { Ban, ListMusic, Repeat1 } from "@lucide/svelte";
+  import { Repeat, Repeat1 } from "@lucide/svelte";
   import { Tip } from "$lib/plugins/ui";
 
   interface Props {
@@ -47,9 +47,7 @@
       {onclick}
       aria-label={label}
     >
-      {#if mode === "off"}<Ban
-          class="size-4"
-        />{:else if mode === "track"}<Repeat1 class="size-4" />{:else}<ListMusic
+      {#if mode === "track"}<Repeat1 class="size-4" />{:else}<Repeat
           class="size-4"
         />{/if}
     </button>
