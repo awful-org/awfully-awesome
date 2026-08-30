@@ -8,6 +8,7 @@ export const manifest: PluginManifest = {
   author: "Gustavo Walk",
   license: "MIT",
   version: "1.0.0",
+  repository: "https://github.com/awful-org/awfully-awesome",
   apiVersion: 1,
   commands: [{ name: "soundboard", usage: "/soundboard" }],
 };

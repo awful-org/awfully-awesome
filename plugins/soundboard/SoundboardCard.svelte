@@ -134,7 +134,7 @@
     }
     error = "";
     try {
-      await editPreview.play(editing.blob, editVolume);
+      await editPreview.play(editing.blob, 0.8 * editVolume);
     } catch (cause) {
       error = cause instanceof Error ? cause.message : "Preview playback was blocked";
     }

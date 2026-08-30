@@ -59,7 +59,7 @@
     }
     try {
       const pcm = cropToMonoPcm(source, { startSeconds: start, endSeconds: end });
-      await preview.play(encodePcm16Wav(pcm), volume);
+      await preview.play(encodePcm16Wav(pcm), 0.8 * volume);
     } catch (cause) {
       error = cause instanceof Error ? cause.message : "Preview playback was blocked";
     }

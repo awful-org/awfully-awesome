@@ -36,10 +36,9 @@ export class CropPreviewPlayer {
       if (generation !== this.generation) return;
       this.stateChanged("playing");
     } catch (cause) {
-      if (generation === this.generation) {
-        this.stopAudio();
-        this.stateChanged("idle");
-      }
+      if (generation !== this.generation) return;
+      this.stopAudio();
+      this.stateChanged("idle");
       throw cause;
     }
   }
