@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import { buildWaveform, clampSelection, cropToMonoPcm, encodePcm16Wav } from "./crop";
+  import { CropPreviewPlayer, type PreviewState } from "./preview";
   import { putSound, type SoundRecord } from "./storage";
 
   interface Props {
@@ -20,25 +21,19 @@
   let name = $state(sourceName.replace(/\.mp3$/i, "").slice(0, 32));
   let error = $state("");
   let saving = $state(false);
-  let preview: AudioBufferSourceNode | null = null;
-  let previewContext: AudioContext | null = null;
+  let previewState = $state<PreviewState>("idle");
+  const preview = new CropPreviewPlayer(undefined, (state) => { previewState = state; });
   // svelte-ignore state_referenced_locally -- source is immutable for this editor mount
   const waveform = buildWaveform(source, 80);
   const duration = $derived(end - start);
   const validName = $derived([...name.trim()].length >= 1 && [...name.trim()].length <= 32);
 
   function stopPreview() {
-    if (preview) {
-      try { preview.stop(); } catch {}
-      preview.disconnect();
-      preview = null;
-    }
+    preview.stop();
   }
 
   onDestroy(() => {
-    stopPreview();
-    void previewContext?.close();
-    previewContext = null;
+    preview.dispose();
   });
 
   function setStart(value: number) {
@@ -56,15 +51,16 @@
   }
 
   async function playPreview() {
-    stopPreview();
-    previewContext ??= new AudioContext();
-    if (previewContext.state === "suspended") await previewContext.resume();
-    const node = previewContext.createBufferSource();
-    node.buffer = source;
-    node.connect(previewContext.destination);
-    node.onended = () => { if (preview === node) preview = null; };
-    preview = node;
-    node.start(0, start, duration);
+    error = "";
+    if (previewState !== "idle") {
+      stopPreview();
+      return;
+    }
+    try {
+      await preview.play(source, start, duration);
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : "Preview playback was blocked";
+    }
   }
 
   async function save() {
@@ -132,7 +128,9 @@
 
   <div class="flex flex-wrap justify-end gap-2">
     <button type="button" class="cursor-pointer rounded-md border px-3 py-1.5 text-xs" onclick={onCancel}>Cancel</button>
-    <button type="button" class="cursor-pointer rounded-md border px-3 py-1.5 text-xs" onclick={playPreview}>Preview</button>
+    <button type="button" class="cursor-pointer rounded-md border px-3 py-1.5 text-xs" onclick={playPreview}>
+      {previewState === "idle" ? "Preview" : previewState === "starting" ? "Cancel preview" : "Stop preview"}
+    </button>
     <button type="button" class="cursor-pointer rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground disabled:opacity-50" disabled={!validName || saving} onclick={save}>
       {saving ? "Saving..." : "Save sound"}
     </button>
