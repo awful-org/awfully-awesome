@@ -7,11 +7,19 @@
  *   PLUGIN_PROXY_HOSTS=api.steampowered.com
  *   PLUGIN_PROXY_SECRETS=STEAM@api.steampowered.com=<your steam web api key>
  */
-const BASE = (import.meta.env.VITE_API_URL as string | undefined) || "https://awful.frav.in";
+// Asked for per request, never hoisted into a module-level const.
+//
+// This used to be `import.meta.env.VITE_API_URL || "https://awful.frav.in"`,
+// which vite replaced with the literal value at build time. Two things were
+// wrong with that: the instance's own address ended up inside the bundle, so
+// no two instances shipped the same JavaScript and a published build hash
+// could not describe any of them; and on an instance that set nothing, every
+// Steam lookup went to awful.frav.in - somebody else's relay, and their
+// steam key - without either operator knowing. The host reads its api origin
+// from /config.json after load, so there is nothing to inline any more.
+import { proxyUrl } from "$lib/plugins/api";
 
-function proxied(upstream: string): string {
-  return `${BASE}/plugin-proxy?url=${encodeURIComponent(upstream)}`;
-}
+const proxied = proxyUrl;
 
 export interface OwnedGame {
   appid: number;
