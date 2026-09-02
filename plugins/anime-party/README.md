@@ -33,10 +33,10 @@ Then, on the card:
    party to that episode, or the bin to drop it.
 
 Party members can queue episodes, select a numbered one, remove it, go to
-the previous or next episode, seek, pause and play, and cycle looping
-between off, one episode, and the whole queue. At the last episode, next
-restarts it in episode-loop mode and wraps to the first in queue-loop mode.
-The queue holds up to 200 episodes, added in batches of 50 per update.
+the previous or next episode, seek, pause and play. When the last queued
+episode ends the party stops; there is no shuffle and no looping, a season
+plays in order. The queue holds up to 200 episodes, added in batches of 50
+per update.
 
 Hovering the video reveals the same controls the call tile carries: play and
 pause, ten seconds back and forward, previous and next episode, a seek bar,

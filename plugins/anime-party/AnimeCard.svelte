@@ -12,7 +12,6 @@
     Search,
     SkipBack,
     SkipForward,
-    Shuffle,
     Trash2,
   } from "@lucide/svelte";
   import type { HostApi } from "$lib/plugins/api";
@@ -21,7 +20,7 @@
   import { Tip } from "$lib/plugins/ui";
   import AnimePlayer from "./AnimePlayer.svelte";
   import AnimeSyncedControls from "./AnimeSyncedControls.svelte";
-  import LoopButton, { queueButtonClass } from "./LoopButton.svelte";
+  import { queueButtonClass } from "./LoopButton.svelte";
   import {
     episodes as fetchEpisodes,
     search as searchShows,
@@ -390,7 +389,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   // ...and the lock-screen owner, with SYNCED handlers - same rule as the
   // call tile, whichever surface renders holds the OS media surface.
   $effect(() => {
-    if (tilePresence.count > 0 || !joined || !current || anime.closed) {
+    if (tilePresence.count > 0 || !joined || !currentKey || anime.closed) {
       host.setNowPlaying(null);
       return;
     }
@@ -429,11 +428,6 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   }
   async function previous() {
     await send({ action: "previous" }, "Going to the previous episode…");
-  }
-  async function cycleLoop() {
-    const mode =
-      anime.loop === "off" ? "track" : anime.loop === "track" ? "queue" : "off";
-    await send({ action: "loop", mode });
   }
   async function seekBy(delta: number) {
     const at = player?.currentTime() ?? rendererPosition;
@@ -649,8 +643,12 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   $effect(() => {
     if (anime.closed) refreshRecreate();
   });
+  // Keyed on the ID, not the episode object: the host hands cardState
+  // through a state proxy, so `current` is a fresh object on EVERY fold and
+  // an effect reading it re-ran on each play and pause, flagging the player
+  // as loading again and flickering the card.
   $effect(() => {
-    current;
+    currentKey;
     playerLoading = true;
     localRate = 1;
     resolvedLang = null;
@@ -1092,25 +1090,6 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
                 >
               {/snippet}
             </Tip>
-            <LoopButton
-              mode={anime.loop}
-              disabled={pending !== null}
-              onclick={cycleLoop}
-            />
-            {#if anime.queue.length > 1}
-              <Tip text="Shuffle queue (for everyone)">
-                {#snippet children(props)}
-                  <button
-                    {...props}
-                    class="rounded border border-border px-3 py-2 hover:bg-muted disabled:opacity-60"
-                    disabled={pending !== null}
-                    onclick={() => send({ action: "shuffle" }, "Shuffling…")}
-                    aria-label="Shuffle queue (for everyone)"
-                    ><Shuffle class="size-4" /></button
-                  >
-                {/snippet}
-              </Tip>
-            {/if}
           </div>
           <div class="ml-auto flex gap-2">
             {#if selfDid === anime.ownerDid}<Tip text="Disband party">

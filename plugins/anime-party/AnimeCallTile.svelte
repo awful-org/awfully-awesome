@@ -64,7 +64,7 @@
   // so join the party too instead of showing a second Join button.
   let autoJoined = false;
   $effect(() => {
-    if (autoJoined || joined || !current || anime.closed) return;
+    if (autoJoined || joined || !currentKey || anime.closed) return;
     autoJoined = true;
     void send({ action: "join" });
   });
@@ -255,12 +255,12 @@
   // the handlers fire SYNCED actions - a headset pause pauses the party
   // for everyone, exactly like the in-tile controls.
   $effect(() => {
-    if (!joined || !current) {
+    if (!joined || !currentKey) {
       host.setNowPlaying(null);
       return;
     }
     host.setNowPlaying({
-      title: episodeLabel(anime.show, current),
+      title: episodeLabel(anime.show, untrack(() => current)),
       artist: anime.show?.title ?? "Anime Party",
       artworkUrl: anime.show?.image ?? undefined,
       playing: anime.playing,
