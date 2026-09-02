@@ -119,6 +119,20 @@ everyone who has the card on screen. Only that one prefix is accepted, in
 the parser and again in the reducer, so a peer cannot put some other host's
 url on everybody's card.
 
+## Performance
+
+The first time anyone watches an episode, anidb.app serves its video from
+its own origin at roughly 5 KB/s, with about thirteen seconds to the first
+byte per segment. A 360p stream needs around 25 KB/s, so a cold episode
+arrives several times slower than real time: it buffers for a while and can
+stall. This is the source throttling its origin, the same buffering
+`ani-cli` users see, and neither the plugin nor the relay can make it
+faster. Once any viewer has pulled an episode it is cached at the CDN edge,
+and from then on every viewer, including a re-watch, gets it at over 1 MB/s
+and it plays smoothly. The player starts at the lowest quality for the
+fastest possible cold start and climbs once the segments are warm, and it
+keeps retrying a slow segment rather than giving up.
+
 ## Fragility
 
 The search page and the embed page are scraped HTML, not an API. That is the

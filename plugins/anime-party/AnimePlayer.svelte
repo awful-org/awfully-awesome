@@ -301,6 +301,11 @@
     if (Hls.isSupported()) {
       hls = new Hls({
         enableWorker: true,
+        // Start at the lowest quality: anidb.app throttles a cache-cold
+        // segment to ~5 KB/s, so the smallest segments are the only ones
+        // that arrive fast enough to begin. ABR climbs on its own once the
+        // segments are warm (Cloudflare caches them after the first pull).
+        startLevel: 0,
         // Buffering is capped well under the stock 60 MB: the relay proxies
         // every segment and rate-limits per client, and with the defaults
         // hls.js pulled 94 segments in 25 seconds filling that buffer as
@@ -318,10 +323,25 @@
           xhr.open("GET", proxiedLoaderUrl(url), true);
         },
       });
+      // A fatal error is not the end: a cache-cold segment on anidb.app's
+      // ~5 KB/s origin times out or arrives truncated, hls.js escalates it,
+      // and simply telling the party "could not load" was the "died out of
+      // nowhere" report. Retry instead - reload for a network error, recover
+      // the decoder for a media error - and only give up after a run of them
+      // with no progress between. FRAG_LOADED resets the counter, so a stream
+      // that is merely slow recovers forever while a genuinely dead one still
+      // stops. Non-fatal errors stay hls.js's own business (gap jumps, a 503
+      // from the relay's concurrency ceiling, a single stalled segment).
+      let fatalStreak = 0;
+      hls.on(Hls.Events.FRAG_LOADED, () => (fatalStreak = 0));
       hls.on(Hls.Events.ERROR, (_event, data) => {
-        // Non-fatal errors are hls.js's own business: it recovers gaps,
-        // stalls and a 503 from the relay's concurrency ceiling by itself.
-        if (data.fatal) fail(key, "Could not load the stream.");
+        if (!data.fatal || !hls) return;
+        if (++fatalStreak > 8) {
+          fail(key, "Could not load the stream.");
+          return;
+        }
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
+        else hls.startLoad();
       });
       hls.attachMedia(video);
       hls.loadSource(master);
