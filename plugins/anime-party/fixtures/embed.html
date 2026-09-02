@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="unsafe-url">
+    <script>history.replaceState(null, '', location.href);</script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+        #player { width: 100%; height: 100%; }
+    </style>
+</head>
+<body>
+    <div id="player"></div>
+
+    <script src="https://ssl.p.jwpcdn.com/player/v/8.26.1/jwplayer.js"></script>
+    <script>
+        var EPISODE_ID = 43600;
+        var AUTOSTART  = false;
+        var ARTWORK    = 'https://cdn.xlsbox.com/poster/small/1782735600/729.jpg';
+        var POS_KEY    = 'pos_' + EPISODE_ID;
+        var _saved     = parseFloat(localStorage.getItem(POS_KEY)) || 0;
+        var _seekDone  = false;
+        var _lastSave  = 0;
+
+        function buildQualityLabels() {
+            var standards = [144, 240, 360, 480, 576, 720, 1080, 1440, 2160];
+            var labels = { 'Auto': 'Auto' };
+            for (var h = 120; h <= 2200; h++) {
+                var closest = standards.reduce(function(prev, curr) {
+                    return Math.abs(curr - h) < Math.abs(prev - h) ? curr : prev;
+                });
+                labels[String(h)] = closest === 2160 ? '4K' : closest + 'p';
+            }
+            return labels;
+        }
+
+        var setup = {
+            sources:                [{ file: 'https://hls.anidb.app/stream/FPIdYkXg99QOUwOxEwP0qSyEqC0BuQ9kR6wBxTcy7YD4KrHRh3YT3HQnnhFjzyxZ/master.m3u8', type: 'hls' }],
+            width:                  '100%',
+            height:                 '100%',
+            stretching:             'uniform',
+            autostart:              AUTOSTART,
+            displaytitle:           false,
+            displaydescription:     false,
+            playbackRateControls:   true,
+            playbackRates:          [0.5, 0.75, 1, 1.25, 1.5, 2],
+            cast:                   {},
+            //qualityLabels:        buildQualityLabels(),
+            captions: {
+                color:             '#ffffff',
+                fontSize:          16,
+                backgroundOpacity: 50,
+                edgeStyle:         'dropshadow',
+            },
+        };
+        if (ARTWORK) setup.image = ARTWORK;
+
+        jwplayer.key = 'uoW6qHjBL3KNudxKVnwa3rt5LlTakbko9e6aQ6VUyKQ';
+        var player = jwplayer('player').setup(setup);
+
+        window.addEventListener('beforeunload', function() {
+            try {
+                var pos = player.getPosition();
+                if (pos > 2) localStorage.setItem(POS_KEY, pos);
+            } catch(e) {}
+        });
+
+        player.on('play', function() {
+            if (_seekDone || !(_saved > 5)) return;
+            _seekDone = true;
+            var attempt = function(n) {
+                if (n <= 0) return;
+                var dur = player.getDuration();
+                if (dur > 0 && _saved < dur) {
+                    player.seek(_saved);
+                } else {
+                    setTimeout(function() { attempt(n - 1); }, 500);
+                }
+            };
+            attempt(8);
+        });
+
+        player.on('time', function(e) {
+            var now = Date.now();
+            if (now - _lastSave > 1000) {
+                _lastSave = now;
+                localStorage.setItem(POS_KEY, e.position);
+            }
+        });
+
+        player.on('complete', function() {
+            localStorage.removeItem(POS_KEY);
+        });
+
+        function lockLandscape() {
+            try {
+                if (screen.orientation && screen.orientation.lock) {
+                    screen.orientation.lock('landscape').catch(function() {});
+                } else if (screen.lockOrientation) {
+                    screen.lockOrientation('landscape');
+                } else if (screen.mozLockOrientation) {
+                    screen.mozLockOrientation('landscape');
+                }
+            } catch(e) {}
+        }
+
+        function unlockOrientation() {
+            try {
+                if (screen.orientation && screen.orientation.unlock) {
+                    screen.orientation.unlock();
+                } else if (screen.unlockOrientation) {
+                    screen.unlockOrientation();
+                } else if (screen.mozUnlockOrientation) {
+                    screen.mozUnlockOrientation();
+                }
+            } catch(e) {}
+        }
+
+        player.on('fullscreen', function(e) {
+            e.fullscreen ? lockLandscape() : unlockOrientation();
+        });
+
+        ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange'].forEach(function(evt) {
+            document.addEventListener(evt, function() {
+                var isFs = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement);
+                isFs ? lockLandscape() : unlockOrientation();
+            });
+        });
+    </script>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a34c983d1d61f247',t:'MTc4ODM1Mjk0Ng=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>

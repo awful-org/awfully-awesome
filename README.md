@@ -26,6 +26,7 @@ when you redeploy, not on their own.
 | --- | --- | --- |
 | [steam-roulette](plugins/steam-roulette) | `/steam` | Everyone links their Steam library, the card intersects them, and one spin picks a game you all own. Needs two instance env vars, see its [README](plugins/steam-roulette/README.md). |
 | [waffle-party](plugins/waffle-party) | `/play` | Start a room-wide YouTube watch or listening party from a video or playlist URL. Members join in one click from the chat card or the party's call tile, share queue and playback controls, and add or remove tracks. Playlists resolve with no API key. |
+| [anime-party](plugins/anime-party) | `/anime` | Watch anime together, synced, from anidb.app (the provider ani-cli uses). Search from the card, pick a show as a group, queue episodes, and every member plays the same HLS stream with shared transport controls; sub or dub is a per-viewer choice. Needs two proxy hosts and a host build with `plugin-stream`, see its [README](plugins/anime-party/README.md). |
 | [soundboard](plugins/soundboard) | `/soundboard` | Keep nine private, device-local MP3 crops and play them through your outgoing call audio. |
 
 Each plugin folder has its own README with setup and details.
