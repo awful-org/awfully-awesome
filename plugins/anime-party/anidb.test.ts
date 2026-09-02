@@ -228,6 +228,15 @@ describe("showIdFromUrl", () => {
     );
   });
 
+  it("accepts a scheme-less url copied from the address bar", () => {
+    expect(showIdFromUrl("anidb.app/anime/bocchi-the-rock-729")).toBe(
+      "bocchi-the-rock-729"
+    );
+    expect(showIdFromUrl("www.anidb.app/anime/re-zero-2/episodes")).toBe(
+      "re-zero-2"
+    );
+  });
+
   it("rejects other hosts, other paths, and non-urls", () => {
     expect(showIdFromUrl("https://example.com/anime/bocchi-the-rock-729")).toBeNull();
     expect(showIdFromUrl("https://anidb.app.evil.example/anime/x-1")).toBeNull();
@@ -235,6 +244,9 @@ describe("showIdFromUrl", () => {
     expect(showIdFromUrl("https://anidb.app/anime/")).toBeNull();
     expect(showIdFromUrl("https://anidb.app/anime/NoDigits")).toBeNull();
     expect(showIdFromUrl("bocchi the rock")).toBeNull();
+    // A bare word becomes host "naruto" once a scheme is added, not anidb.app.
+    expect(showIdFromUrl("naruto")).toBeNull();
+    expect(showIdFromUrl("anidb.app/browse?q=x")).toBeNull();
     expect(showIdFromUrl("")).toBeNull();
   });
 });

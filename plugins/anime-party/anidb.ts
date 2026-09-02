@@ -68,9 +68,16 @@ export function validShowId(v: unknown): v is string {
 
 /** `https://anidb.app/anime/bocchi-the-rock-729` -> `bocchi-the-rock-729`. */
 export function showIdFromUrl(input: string): string | null {
+  const raw = input.trim();
+  // A link copied from the address bar usually has no scheme
+  // (`anidb.app/anime/...`). Without one new URL() throws, the whole string
+  // was searched as text, and browse answered with its generic page and no
+  // results - the "brings the whole page, always not found" report. Add a
+  // scheme and let the anidb.app host check below reject anything that is
+  // actually a plain search term (`naruto` -> host `naruto`, not anidb.app).
+  const candidate = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
   try {
-    const url = new URL(input.trim());
-    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    const url = new URL(candidate);
     const host = url.hostname.toLowerCase().replace(/^www\./, "");
     if (host !== "anidb.app") return null;
     const parts = url.pathname.split("/").filter(Boolean);
