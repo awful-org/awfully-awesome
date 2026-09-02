@@ -7,6 +7,7 @@
   import { Tip } from "$lib/plugins/ui";
   import { livePosition } from "./tile-presence.svelte";
   import { episodeLabel } from "./titles";
+  import { episodes as fetchEpisodes, type Episode } from "./anidb";
 
   interface Props {
     card: Message;
@@ -25,6 +26,47 @@
   // Nothing to fetch and nothing to cache: the name of a track is the show
   // and the episode number, both already folded into the state.
   const title = $derived(current ? episodeLabel(anime.show, current) : "");
+
+  // The show's full episode list, so Next and Previous walk the SHOW, not
+  // just the queue. Same cached, deduped episodes() call the card uses; the
+  // strip only mounts it while a show is actually playing.
+  let episodeList = $state<Episode[]>([]);
+  let episodesLoadedFor = "";
+  $effect(() => {
+    const showId = anime.show?.id;
+    if (!showId || !current || showId === episodesLoadedFor) return;
+    episodesLoadedFor = showId;
+    episodeList = [];
+    void fetchEpisodes(showId)
+      .then((list) => {
+        episodeList = list;
+      })
+      .catch(() => {
+        // Best-effort enrichment; navigation still no-ops safely without it.
+      });
+  });
+  /** The next episode in the show's full list - the smallest number strictly
+   *  above the one playing - or null when already on the latest. */
+  function nextEpisode(): Episode | null {
+    if (!current) return null;
+    let best: Episode | null = null;
+    for (const ep of episodeList) {
+      if (ep.number > current.number && (best === null || ep.number < best.number))
+        best = ep;
+    }
+    return best;
+  }
+  /** The previous episode - the largest number strictly below the one
+   *  playing - or null. */
+  function prevEpisode(): Episode | null {
+    if (!current) return null;
+    let best: Episode | null = null;
+    for (const ep of episodeList) {
+      if (ep.number < current.number && (best === null || ep.number > best.number))
+        best = ep;
+    }
+    return best;
+  }
 
   async function send(data: unknown) {
     try {
@@ -50,13 +92,26 @@
     });
   });
 
-  /** No live player here: early episodes restart, otherwise previous. */
+  /** Next and Previous walk the SHOW's full episode list, the same as the
+   *  card and the call tile: resolve the adjacent episode and send it as a
+   *  concrete step, or no-op at the ends. */
+  async function goNext() {
+    const n = nextEpisode();
+    if (n)
+      await send({
+        action: "step",
+        episode: { id: n.id, number: n.number },
+        at: "end",
+      });
+  }
   async function previous() {
-    if (anime.currentIndex !== null && anime.currentIndex > 0) {
-      await send({ action: "select", index: anime.currentIndex - 1 });
-    } else {
-      await send({ action: "seek", position: 0, atMs: Date.now() });
-    }
+    const p = prevEpisode();
+    if (p)
+      await send({
+        action: "step",
+        episode: { id: p.id, number: p.number },
+        at: "start",
+      });
   }
 </script>
 
@@ -105,7 +160,7 @@
         <button
           type="button"
           {...props}
-          onclick={() => send({ action: "skip" })}
+          onclick={goNext}
           aria-label="Next episode"
           class="shrink-0 cursor-pointer rounded bg-primary/15 p-1 text-primary hover:bg-primary/25"
         >

@@ -262,6 +262,14 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   const unqueued = $derived(
     episodeList.filter((ep) => !queuedIds.has(ep.id))
   );
+  /** On the latest episode the show's list currently knows about. Open-ended
+   *  on purpose: the show may still be airing, so this is not "the show
+   *  ended", only "nothing newer is fetched yet". */
+  const atLatest = $derived(
+    current != null &&
+      episodeList.length > 0 &&
+      current.number >= Math.max(...episodeList.map((e) => e.number))
+  );
   /** The one-line note for an episode that had no track in `lang`. */
   const langNote = $derived(
     resolvedLang && resolvedLang !== lang
@@ -400,7 +408,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       playing: anime.playing,
       onPlay: () => void togglePlayback(),
       onPause: () => void togglePlayback(),
-      onNext: () => void send({ action: "skip" }, "Skipping…"),
+      onNext: () => void goNext(),
       onPrevious: () => void previous(),
     });
     return () => host.setNowPlaying(null);
@@ -426,8 +434,46 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       anime.playing ? "Pausing…" : "Starting…"
     );
   }
+  /** The next episode in the SHOW's full list - the smallest number
+   *  strictly above the one playing - or null when we are already on the
+   *  latest fetched episode. Next walks the show, not just the queue. */
+  function nextEpisode(): Episode | null {
+    if (!current) return null;
+    let best: Episode | null = null;
+    for (const ep of episodeList) {
+      if (ep.number > current.number && (best === null || ep.number < best.number))
+        best = ep;
+    }
+    return best;
+  }
+  /** The previous episode in the show's full list - the largest number
+   *  strictly below the one playing - or null. */
+  function prevEpisode(): Episode | null {
+    if (!current) return null;
+    let best: Episode | null = null;
+    for (const ep of episodeList) {
+      if (ep.number < current.number && (best === null || ep.number > best.number))
+        best = ep;
+    }
+    return best;
+  }
+  async function goNext() {
+    const n = nextEpisode();
+    // No next episode: the "latest episode" note is already on screen, so the
+    // press is a deliberate no-op rather than a stale skip action.
+    if (n)
+      await send(
+        { action: "step", episode: { id: n.id, number: n.number }, at: "end" },
+        "Next episode…"
+      );
+  }
   async function previous() {
-    await send({ action: "previous" }, "Going to the previous episode…");
+    const p = prevEpisode();
+    if (p)
+      await send(
+        { action: "step", episode: { id: p.id, number: p.number }, at: "start" },
+        "Previous episode…"
+      );
   }
   async function seekBy(delta: number) {
     const at = player?.currentTime() ?? rendererPosition;
@@ -449,8 +495,25 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     return `${minutes}:${remainder.toString().padStart(2, "0")}`;
   }
   async function ended() {
-    if (anime.currentIndex !== null)
-      await send({ action: "ended", index: anime.currentIndex });
+    if (anime.currentIndex === null) return;
+    const n = nextEpisode();
+    if (n) {
+      await send({
+        action: "step",
+        episode: { id: n.id, number: n.number },
+        at: "end",
+      });
+    } else {
+      // The last episode finished: stop the party where it ended instead of
+      // trying to keep a finished video "playing". Pause needs a finite
+      // position >= 0.
+      const at = player?.currentTime() ?? duration;
+      await send({
+        action: "pause",
+        position: Number.isFinite(at) && at >= 0 ? at : 0,
+        atMs: Date.now(),
+      });
+    }
   }
   async function join() {
     pending = "Joining party…";
@@ -590,11 +653,14 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       episodesLoading = false;
     }
   }
-  // Fetched once per show, and only once the picker is actually open: this
-  // is a direct request from every member's own browser.
+  // Fetched once per show for any joined viewer, not only when the add panel
+  // is open: Next and Previous walk the show's full list, so the list has to
+  // be present wherever navigation can happen. Same cached episodes() call,
+  // a direct request from every member's own browser, so it costs nothing
+  // extra.
   $effect(() => {
     const showId = anime.show?.id;
-    if (!addOpen || !showId || showId === episodesLoadedFor) return;
+    if (!joined || !showId || showId === episodesLoadedFor) return;
     episodesLoadedFor = showId;
     episodeList = [];
     void loadEpisodes(showId);
@@ -936,7 +1002,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
               : ""}
             onTogglePlay={() => void togglePlayback()}
             onPrevious={() => void previous()}
-            onSkip={() => void send({ action: "skip" }, "Skipping…")}
+            onSkip={() => void goNext()}
             onSeek={(p) =>
               void send({ action: "seek", position: p, atMs: Date.now() })}
             onSeekBy={(d) => void seekBy(d)}
@@ -1058,7 +1124,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
                     {...props}
                     class="rounded border border-border px-3 py-2 disabled:opacity-60"
                     disabled={pending !== null}
-                    onclick={() => send({ action: "skip" }, "Skipping…")}
+                    onclick={goNext}
                     aria-label="Skip"><SkipForward class="size-4" /></button
                   >
                 {/snippet}
@@ -1141,6 +1207,9 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
           >
         {/if}
       </div>
+      {#if atLatest}
+        <p class="text-[11px] text-muted-foreground">You're on the latest episode. More may appear here if the show is still airing.</p>
+      {/if}
     </div>
     {#if queueOpen}
       <div

@@ -363,50 +363,65 @@ describe("anime reducer", () => {
     expect(state.playing).toBe(false);
   });
 
-  it("skips to the next episode and stops after the last when looping is off", () => {
-    const next = update(watching([1, 2]), { action: "skip" });
+  it("steps forward to a new episode, growing the queue at the end", () => {
+    const next = update(watching([1]), {
+      action: "step",
+      episode: ep(2),
+      at: "end",
+    });
+    expect(next.queue.map((e) => e.number)).toEqual([1, 2]);
     expect(next.currentIndex).toBe(1);
     expect(next.playing).toBe(true);
     expect(next.position).toBe(0);
-    const ended = update(next, { action: "skip" });
-    expect(ended.currentIndex).toBeNull();
-    expect(ended.playing).toBe(false);
   });
 
-  it("restarts or wraps the final episode when the loop mode requires it", () => {
-    const last = {
-      ...watching([1, 2]),
-      currentIndex: 1,
-      position: 42,
-    } as AnimeState;
-    const trackLoop = update({ ...last, loop: "track" }, { action: "skip" });
-    expect(trackLoop.currentIndex).toBe(1);
-    expect(trackLoop.position).toBe(0);
-    expect(trackLoop.playing).toBe(true);
-
-    const queueLoop = update({ ...last, loop: "queue" }, { action: "skip" });
-    expect(queueLoop.currentIndex).toBe(0);
-    expect(queueLoop.position).toBe(0);
-    expect(queueLoop.playing).toBe(true);
+  it("steps to an already-queued episode instead of duplicating it", () => {
+    const moved = update(watching([1, 2]), {
+      action: "step",
+      episode: ep(2),
+      at: "end",
+    });
+    expect(moved.queue.map((e) => e.number)).toEqual([1, 2]);
+    expect(moved.currentIndex).toBe(1);
   });
 
-  it("goes to the previous episode and respects queue and track looping", () => {
-    const secondEpisode = {
-      ...watching([1, 2]),
-      currentIndex: 1,
-      position: 42,
-    } as AnimeState;
-    expect(update(secondEpisode, { action: "previous" }).currentIndex).toBe(0);
+  it("steps backward to an earlier episode, growing the queue at the front", () => {
+    const prev = update(watching([2]), {
+      action: "step",
+      episode: ep(1),
+      at: "start",
+    });
+    expect(prev.queue.map((e) => e.number)).toEqual([1, 2]);
+    expect(prev.currentIndex).toBe(0);
+    expect(prev.position).toBe(0);
+  });
 
-    const firstEpisode = { ...secondEpisode, currentIndex: 0 } as AnimeState;
+  it("starts an idle party playing on a step", () => {
+    const started = update(party(), {
+      action: "step",
+      episode: ep(1),
+      at: "end",
+    });
+    expect(started.currentIndex).toBe(0);
+    expect(started.playing).toBe(true);
+  });
+
+  it("ignores a step past the queue cap and a malformed or foreign one", () => {
+    const full = {
+      ...party(),
+      queue: Array.from({ length: QUEUE_CAP }, (_, i) => ep(i + 1)),
+      currentIndex: 0,
+    } as AnimeState;
     expect(
-      update({ ...firstEpisode, loop: "queue" }, { action: "previous" })
-        .currentIndex
-    ).toBe(1);
+      update(full, { action: "step", episode: ep(QUEUE_CAP + 1), at: "end" })
+    ).toBe(full);
+    const s = watching([1]);
     expect(
-      update({ ...firstEpisode, loop: "track" }, { action: "previous" })
-        .currentIndex
-    ).toBe(0);
+      update(s, { action: "step", episode: { id: -1, number: 2 }, at: "end" })
+    ).toBe(s);
+    expect(
+      update(s, { action: "step", episode: ep(2), at: "end" }, "Stranger")
+    ).toBe(s);
   });
 
   it("persists valid playback intent and rejects invalid positions", () => {
@@ -453,16 +468,6 @@ describe("anime reducer", () => {
     expect(closed.playing).toBe(false);
   });
 
-  it("loops an episode or the queue when an ended update targets the current item", () => {
-    const track = { ...watching([1]), loop: "track" as const, position: 80 };
-    expect(update(track, { action: "ended", index: 0 }).currentIndex).toBe(0);
-    const queue = {
-      ...watching([1, 2]),
-      currentIndex: 1,
-      loop: "queue" as const,
-    } as AnimeState;
-    expect(update(queue, { action: "ended", index: 1 }).currentIndex).toBe(0);
-  });
 });
 
 describe("syncResponder", () => {
@@ -775,42 +780,13 @@ describe("watch ticks", () => {
       position: 42,
       atMs: 1_700_000_000_000,
     });
-    const skipped = update(ticked, { action: "skip" });
+    const skipped = update(ticked, {
+      action: "step",
+      episode: ep(3),
+      at: "end",
+    });
     expect(skipped.tickAtMs).toBeNull();
     expect(skipped.tickBy).toBeNull();
   });
 });
 
-describe("shuffle", () => {
-  const threeEpisodes = () => watching([1, 2, 3]);
-
-  it("permutes deterministically from the update id", () => {
-    const s = threeEpisodes();
-    const deal = () =>
-      reduce(s, { data: { action: "shuffle" } }, {
-        ...ctx(),
-        updateId: "deal-1",
-      }) as AnimeState;
-    expect(deal().queue).toEqual(deal().queue);
-    expect([...deal().queue].map((e) => e.id).sort()).toEqual(
-      [...s.queue].map((e) => e.id).sort()
-    );
-  });
-
-  it("keeps the playing episode playing at its new slot", () => {
-    const s = threeEpisodes();
-    const playingEpisode = s.queue[s.currentIndex!];
-    const shuffled = reduce(s, { data: { action: "shuffle" } }, {
-      ...ctx(),
-      updateId: "deal-2",
-    }) as AnimeState;
-    expect(shuffled.queue[shuffled.currentIndex!]).toEqual(playingEpisode);
-  });
-
-  it("is a no-op below two episodes and for non-members", () => {
-    const one = watching([1]);
-    expect(update(one, { action: "shuffle" })).toBe(one);
-    const s = threeEpisodes();
-    expect(update(s, { action: "shuffle" }, "Stranger")).toBe(s);
-  });
-});

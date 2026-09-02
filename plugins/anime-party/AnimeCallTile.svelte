@@ -3,7 +3,7 @@
   import { LogIn } from "@lucide/svelte";
   import type { HostApi } from "$lib/plugins/api";
   import type { Message } from "$lib/transport/transport.svelte";
-  import type { Correction } from "$lib/plugins/watch";
+  import { watchKeyIntent, type Correction } from "$lib/plugins/watch";
   import { Tip } from "$lib/plugins/ui";
   import AnimePlayer from "./AnimePlayer.svelte";
   import AnimeSyncedControls from "./AnimeSyncedControls.svelte";
@@ -15,7 +15,7 @@
     syncResponderFor,
     type AnimeState,
   } from "./logic";
-  import type { Lang } from "./anidb";
+  import { episodes as fetchEpisodes, type Episode, type Lang } from "./anidb";
   import { episodeLabel } from "./titles";
   import { driftCorrection, projectedTickPosition } from "./watch-drift";
   import { clockEstimateFor, ensureClock } from "./clock";
@@ -56,6 +56,53 @@
   );
   /** The renderer-handoff key for the playing episode. */
   const currentKey = $derived(current ? String(current.id) : null);
+
+  // The show's full episode list, so Next and Previous walk the SHOW, not
+  // just the queue. Same cached, deduped episodes() call the card uses, so
+  // fetching it here costs the instance relay nothing.
+  let episodeList = $state<Episode[]>([]);
+  let episodesLoadedFor = "";
+  $effect(() => {
+    const showId = anime.show?.id;
+    if (!joined || !showId || showId === episodesLoadedFor) return;
+    episodesLoadedFor = showId;
+    episodeList = [];
+    void fetchEpisodes(showId)
+      .then((list) => {
+        episodeList = list;
+      })
+      .catch(() => {
+        // Navigation still works off whatever is queued; the list is a
+        // best-effort enrichment, not a hard dependency.
+      });
+  });
+  /** The next episode in the show's full list - the smallest number strictly
+   *  above the one playing - or null when already on the latest. */
+  function nextEpisode(): Episode | null {
+    if (!current) return null;
+    let best: Episode | null = null;
+    for (const ep of episodeList) {
+      if (ep.number > current.number && (best === null || ep.number < best.number))
+        best = ep;
+    }
+    return best;
+  }
+  /** The previous episode - the largest number strictly below the one
+   *  playing - or null. */
+  function prevEpisode(): Episode | null {
+    if (!current) return null;
+    let best: Episode | null = null;
+    for (const ep of episodeList) {
+      if (ep.number < current.number && (best === null || ep.number > best.number))
+        best = ep;
+    }
+    return best;
+  }
+  const atLatest = $derived(
+    current != null &&
+      episodeList.length > 0 &&
+      current.number >= Math.max(...episodeList.map((e) => e.number))
+  );
 
   let player = $state<AnimePlayer | null>(null);
 
@@ -184,6 +231,51 @@
   });
   function setVolume(value: number) {
     setAudioVolume(host.storage, value);
+  }
+
+  // Keyboard shortcuts, scoped to the call tile and only while it is focused
+  // (the listener is on the tile root, so it fires only when the tile or one
+  // of its controls has focus, never while a chat or search field does). The
+  // arrows mirror the on-screen controls: left/right are the same synced
+  // -10s / +10s the seek buttons send, up/down are this viewer's own volume.
+  const VOLUME_STEP = 5;
+  function onTileKeydown(event: KeyboardEvent) {
+    if (!joined || !current) return;
+    const intent = watchKeyIntent(event.key);
+    if (!intent) return;
+    event.preventDefault();
+    switch (intent) {
+      case "toggle-play":
+        void togglePlayback();
+        break;
+      case "seek-back":
+        void seekBy(-10);
+        break;
+      case "seek-forward":
+        void seekBy(10);
+        break;
+      case "volume-up":
+        setVolume(Math.min(100, volume + VOLUME_STEP));
+        break;
+      case "volume-down":
+        setVolume(Math.max(0, volume - VOLUME_STEP));
+        break;
+    }
+  }
+
+  // Attached imperatively (a Svelte action) rather than as an onkeydown
+  // attribute: the tile root is a non-interactive container, and wiring the
+  // listener in markup trips the a11y rule for no real benefit. The action
+  // makes the root focusable and listens only there, so the shortcuts stay
+  // scoped to a focused tile.
+  function tileKeys(node: HTMLElement) {
+    node.tabIndex = 0;
+    node.addEventListener("keydown", onTileKeydown);
+    return {
+      destroy() {
+        node.removeEventListener("keydown", onTileKeydown);
+      },
+    };
   }
   async function toggleLang() {
     lang = lang === "jpn" ? "eng" : "jpn";
@@ -327,11 +419,25 @@
   }
 
   async function skip() {
-    await send({ action: "skip" });
+    const n = nextEpisode();
+    // No next episode: the "latest episode" note is already showing, so the
+    // press is a deliberate no-op rather than a stale skip action.
+    if (n)
+      await send({
+        action: "step",
+        episode: { id: n.id, number: n.number },
+        at: "end",
+      });
   }
 
   async function previous() {
-    await send({ action: "previous" });
+    const p = prevEpisode();
+    if (p)
+      await send({
+        action: "step",
+        episode: { id: p.id, number: p.number },
+        at: "start",
+      });
   }
 
   async function seekTo(position: number) {
@@ -344,12 +450,36 @@
   }
 
   async function ended() {
-    if (anime.currentIndex !== null)
-      await send({ action: "ended", index: anime.currentIndex });
+    if (anime.currentIndex === null) return;
+    const n = nextEpisode();
+    if (n) {
+      await send({
+        action: "step",
+        episode: { id: n.id, number: n.number },
+        at: "end",
+      });
+    } else {
+      // The last episode finished: stop the party where it ended instead of
+      // trying to keep a finished video "playing". Pause needs a finite
+      // position >= 0.
+      const at = player?.currentTime() ?? duration;
+      await send({
+        action: "pause",
+        position: Number.isFinite(at) && at >= 0 ? at : 0,
+        atMs: Date.now(),
+      });
+    }
   }
 </script>
 
-<div class="group/tile relative flex h-full w-full flex-col bg-black">
+<!-- use:tileKeys makes the tile focusable and owns the arrow-key shortcuts;
+     they fire only when this tile has focus (the host focuses a tile on
+     click, and its controls are focusable too). -->
+<div
+  class="group/tile relative flex h-full w-full flex-col bg-black focus:outline-none"
+  aria-label="Anime party player. Space plays or pauses, left and right seek ten seconds, up and down change your volume."
+  use:tileKeys
+>
   {#if !joined}
     <div class="grid h-full w-full place-items-center">
       <Tip text="Join party">
@@ -449,6 +579,11 @@
       >
         {langNote}
       </p>
+    {/if}
+    {#if atLatest}
+      <p
+        class="pointer-events-none absolute inset-x-0 top-3 z-30 mx-auto w-fit max-w-[90%] rounded bg-black/70 px-2 py-1 text-center font-mono text-[10px] text-white/80"
+      >You're on the latest episode. More may appear here if the show is still airing.</p>
     {/if}
   {:else}
     <div

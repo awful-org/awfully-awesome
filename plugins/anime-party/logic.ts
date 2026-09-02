@@ -300,28 +300,14 @@ function withActivity(
   return { ...state, activity, activitySeq: state.activitySeq + 1 };
 }
 
-function nextTrack(anime: AnimeState): AnimeState {
-  if (anime.currentIndex === null) return anime;
-  if (anime.loop === "track")
-    return { ...anime, position: 0, tickAtMs: null, tickBy: null };
-  const next = anime.currentIndex + 1;
-  if (next < anime.queue.length)
-    return { ...anime, currentIndex: next, position: 0, tickAtMs: null, tickBy: null };
-  return anime.loop === "queue" && anime.queue.length
-    ? { ...anime, currentIndex: 0, position: 0, tickAtMs: null, tickBy: null }
-    : { ...anime, currentIndex: null, playing: false, position: 0, tickAtMs: null, tickBy: null };
-}
-
-function previousTrack(anime: AnimeState): AnimeState {
-  if (anime.currentIndex === null) return anime;
-  if (anime.loop === "track")
-    return { ...anime, position: 0, tickAtMs: null, tickBy: null };
-  const previous = anime.currentIndex - 1;
-  if (previous >= 0)
-    return { ...anime, currentIndex: previous, position: 0, tickAtMs: null, tickBy: null };
-  return anime.loop === "queue" && anime.queue.length
-    ? { ...anime, currentIndex: anime.queue.length - 1, position: 0, tickAtMs: null, tickBy: null }
-    : { ...anime, position: 0, tickAtMs: null, tickBy: null };
+/**
+ * The queue slot a concrete episode occupies, or -1. Navigation is resolved
+ * on the client (which holds the show's full episode list) and sent as a
+ * concrete episode, so this is how the reducer tells "already queued, just
+ * move to it" from "new, grow the queue".
+ */
+function indexOfEpisode(anime: AnimeState, id: number): number {
+  return anime.queue.findIndex((episode) => episode.id === id);
 }
 
 export function reduce(
@@ -511,25 +497,6 @@ export function reduce(
         additions[0].number
       );
     }
-    case "shuffle": {
-      if (anime.queue.length < 2) return anime;
-      const order = shuffledOrder(anime.queue.length, ctx.updateId);
-      const queue = order.map((index) => anime.queue[index]);
-      return withActivity(
-        {
-          ...anime,
-          queue,
-          // The playing episode keeps playing; only its slot moves.
-          currentIndex:
-            anime.currentIndex === null
-              ? null
-              : order.indexOf(anime.currentIndex),
-        },
-        ctx,
-        "shuffled the queue",
-        null
-      );
-    }
     case "select": {
       if (!validIndex(data.index, anime.queue)) return anime;
       return withActivity(
@@ -539,15 +506,55 @@ export function reduce(
         anime.queue[data.index].number
       );
     }
-    case "loop": {
-      if (data.mode !== "off" && data.mode !== "track" && data.mode !== "queue")
-        return anime;
-      return { ...anime, loop: data.mode };
-    }
-    case "ended": {
-      if (data.index !== anime.currentIndex || anime.currentIndex === null)
-        return anime;
-      return nextTrack(anime);
+    case "step": {
+      // Next and previous walk the SHOW, not just the queue. The client holds
+      // the show's full episode list (the reducer never fetches), resolves the
+      // adjacent episode, and sends it here as a concrete { id, number }. If it
+      // is already queued we just move to it; otherwise we grow the queue by
+      // one - at the end for a forward step, at the front for a backward one -
+      // so an episode that was never added still plays. `at` defaults forward.
+      if (!validEpisode(data.episode)) return anime;
+      const episode: Episode = {
+        id: data.episode.id,
+        number: data.episode.number,
+      };
+      const back = data.at === "start";
+      const action: ActivityAction = back
+        ? "went to the previous track"
+        : "skipped";
+      const at = indexOfEpisode(anime, episode.id);
+      if (at !== -1) {
+        if (at === anime.currentIndex) return anime;
+        return withActivity(
+          { ...anime, currentIndex: at, position: 0, tickAtMs: null, tickBy: null },
+          ctx,
+          action,
+          episode.number
+        );
+      }
+      // A full queue cannot grow; the client shows the "latest episode" note
+      // rather than the party silently ignoring the press.
+      if (anime.queue.length >= QUEUE_CAP) return anime;
+      const queue = back
+        ? [episode, ...anime.queue]
+        : [...anime.queue, episode];
+      return withActivity(
+        {
+          ...anime,
+          queue,
+          // Prepending shifts every later slot by one, but we are moving TO
+          // the new episode, so its slot (0, or the new last) is what current
+          // points at. An idle party starts playing on the step.
+          currentIndex: back ? 0 : queue.length - 1,
+          position: 0,
+          tickAtMs: null,
+          tickBy: null,
+          playing: anime.currentIndex === null ? true : anime.playing,
+        },
+        ctx,
+        action,
+        episode.number
+      );
     }
     case "remove": {
       if (!validIndex(data.index, anime.queue)) return anime;
@@ -579,21 +586,6 @@ export function reduce(
         ctx,
         "removed",
         removed
-      );
-    }
-    case "skip": {
-      if (anime.currentIndex === null) return anime;
-      const episode = numberAt(anime, anime.currentIndex);
-      return withActivity(nextTrack(anime), ctx, "skipped", episode);
-    }
-    case "previous": {
-      if (anime.currentIndex === null) return anime;
-      const episode = numberAt(anime, anime.currentIndex);
-      return withActivity(
-        previousTrack(anime),
-        ctx,
-        "went to the previous track",
-        episode
       );
     }
     case "play": {
