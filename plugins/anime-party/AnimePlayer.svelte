@@ -39,6 +39,10 @@
    * `play()` resolving is not the same fact - it resolves for a muted
    * element the policy then stalls.
    */
+  function errName(err: unknown): string {
+    return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+  }
+
   export function videoIsPlaying(video: AutoplayResumeVideo | null): boolean {
     return !!video && !video.paused && !video.ended;
   }
@@ -104,13 +108,15 @@
         clear();
         try {
           await video.play();
-        } catch {
+        } catch (err) {
           // NotAllowedError. A muted play is permitted where an unmuted one
           // is not, so take it and let onPlaying give the sound back.
+          console.warn("[anime-party] play refused, retrying muted:", errName(err));
           video.muted = true;
           try {
             await video.play();
-          } catch {
+          } catch (err2) {
+            console.warn("[anime-party] muted play refused too:", errName(err2));
             options.setNeedsClick(true);
             return;
           }
@@ -132,7 +138,10 @@
         options.setNeedsClick(false);
         clear();
         restoreAudio(video);
-        void video.play().catch(() => options.setNeedsClick(true));
+        void video.play().catch((err) => {
+          console.warn("[anime-party] resume refused:", errName(err));
+          options.setNeedsClick(true);
+        });
         schedule(video);
       },
       pause() {
@@ -340,6 +349,15 @@
       let fatalStreak = 0;
       hls.on(Hls.Events.FRAG_LOADED, () => (fatalStreak = 0));
       hls.on(Hls.Events.ERROR, (_event, data) => {
+        // Every error, fatal or not: a stalled party used to leave nothing
+        // in the console but the network tab's own "canceled" rows.
+        console.warn("[anime-party] hls error", {
+          type: data.type,
+          details: data.details,
+          fatal: data.fatal,
+          status: (data.response as { code?: number } | undefined)?.code,
+          url: data.frag?.url ?? (data as { url?: string }).url,
+        });
         if (!data.fatal || !hls) return;
         if (++fatalStreak > 8) {
           fail(key, "Could not load the stream.");
@@ -359,6 +377,7 @@
       return;
     }
     ready = true;
+    console.info("[anime-party] player ready", { key, position, playing });
     onReady?.();
     sync();
   }
@@ -443,6 +462,13 @@
       onDuration?.(typeof d === "number" && Number.isFinite(d) ? d : 0);
     }, 1_000);
     return () => {
+      // The handoff between the card and the call tile is where playback
+      // has been reported to die; say which player left and where it was.
+      console.info("[anime-party] player unmounting", {
+        key: requestedKey,
+        position: currentTime(),
+        paused: video?.paused ?? null,
+      });
       disposed = true;
       autoplayResume.dispose();
       window.clearInterval(reporter);
