@@ -44,6 +44,21 @@ export class NotConfiguredError extends Error {
   }
 }
 
+/**
+ * anidb.app itself is not answering: the proxy relays an upstream 5xx as a
+ * 502 whose body names the status, and a maintenance page is a 503. Not a
+ * format change and not this instance's configuration, so the card can say
+ * "try again later" instead of blaming either.
+ */
+export class UpstreamDownError extends Error {
+  status: number;
+  constructor(status: number) {
+    super(`anidb.app answered ${status || "nothing"}`);
+    this.name = "UpstreamDownError";
+    this.status = status;
+  }
+}
+
 /** How many search results a card may carry. Card payloads are 16 KB and
  *  every member renders the whole list, so the cap is small on purpose. */
 export const SEARCH_CAP = 10;
@@ -249,7 +264,14 @@ async function proxied(upstream: string): Promise<string> {
   // 204 is the proxy saying the host is not allowlisted - a configuration
   // fact the card can state, not a transient failure to retry.
   if (res.status === 204) throw new NotConfiguredError();
-  if (!res.ok) throw new Error(`anidb.app returned ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    const upstream = /Upstream answered (\d{3})/.exec(body);
+    if (res.status === 502 && (upstream || /unreachable/i.test(body))) {
+      throw new UpstreamDownError(upstream ? Number(upstream[1]) : 0);
+    }
+    throw new Error(`anidb.app returned ${res.status}`);
+  }
   return res.text();
 }
 

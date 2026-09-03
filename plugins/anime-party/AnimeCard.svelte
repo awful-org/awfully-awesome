@@ -26,6 +26,7 @@
     episodes as fetchEpisodes,
     search as searchShows,
     NotConfiguredError,
+    UpstreamDownError,
     type Episode,
     type Lang,
     type Show,
@@ -63,6 +64,8 @@
 
   /** The one sentence an unconfigured instance gets to say. Not an error to
    *  retry: the operator has to allowlist the hosts. */
+  const upstreamDown = (err: UpstreamDownError): string =>
+    `anidb.app is not answering right now${err.status ? ` (it said ${err.status})` : ""}. Nothing here is broken; try again in a few minutes.`;
   const NOT_CONFIGURED =
     "This instance is not configured for anime-party " +
     "(PLUGIN_PROXY_HOSTS needs anidb.app and hls.anidb.app).";
@@ -639,7 +642,9 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       error =
         err instanceof NotConfiguredError
           ? NOT_CONFIGURED
-          : "The search could not be read. anidb.app may have changed.";
+          : err instanceof UpstreamDownError
+            ? upstreamDown(err)
+            : "The search could not be read. anidb.app may have changed.";
     } finally {
       searching = false;
     }
@@ -657,8 +662,11 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       episodeList = await fetchEpisodes(showId);
       if (!episodeList.length)
         episodesError = "anidb.app lists no episodes for this show.";
-    } catch {
-      episodesError = "The episode list could not be read.";
+    } catch (err) {
+      episodesError =
+        err instanceof UpstreamDownError
+          ? upstreamDown(err)
+          : "The episode list could not be read.";
     } finally {
       episodesLoading = false;
     }
