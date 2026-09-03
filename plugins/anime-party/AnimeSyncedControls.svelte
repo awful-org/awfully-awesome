@@ -129,11 +129,15 @@
     {#if playing}<Pause class="size-6" />{:else}<Play class="size-6" />{/if}
   </button>
 
+  <!-- focus-within keeps the bar shown after a click; it has to keep it
+       CLICKABLE too. With only the opacity forced, the call chrome idling
+       left a fully visible bar that ignored the pointer, which read as the
+       play button breaking until the mouse moved. -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     onclick={(e) => e.stopPropagation()}
-    class="absolute inset-x-0 bottom-0 flex flex-col gap-1 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2 pt-8 transition-opacity focus-within:opacity-100 {visible
+    class="absolute inset-x-0 bottom-0 flex flex-col gap-1 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2 pt-8 transition-opacity focus-within:pointer-events-auto focus-within:opacity-100 {visible
       ? 'pointer-events-auto opacity-100'
       : 'pointer-events-none opacity-0'}"
   >
