@@ -253,10 +253,27 @@ async function proxied(upstream: string): Promise<string> {
   return res.text();
 }
 
+/**
+ * Direct first: these endpoints send open CORS headers, so the lookup costs
+ * the instance relay nothing. Through the proxy when that fails: a 503 from
+ * anidb.app (a rate limit on this address, or an outage) arrives without
+ * the CORS header and reads as a blocked request, and the proxy has its own
+ * egress address and a short cache of what it already fetched.
+ */
 async function directJson(upstream: string): Promise<unknown> {
-  const res = await fetch(upstream);
-  if (!res.ok) throw new Error(`anidb.app returned ${res.status}`);
-  return res.json();
+  try {
+    const res = await fetch(upstream);
+    if (res.ok) return res.json();
+    console.warn(
+      `[anime-party] anidb.app answered ${res.status} directly, retrying through the proxy`
+    );
+  } catch (err) {
+    console.warn(
+      "[anime-party] direct anidb.app fetch failed, retrying through the proxy:",
+      err instanceof Error ? err.message : err
+    );
+  }
+  return JSON.parse(await proxied(upstream));
 }
 
 /** Search, through the proxy: the browse page carries no CORS headers. */
