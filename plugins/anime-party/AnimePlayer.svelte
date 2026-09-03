@@ -160,7 +160,7 @@
   import { onMount } from "svelte";
   import Hls from "hls.js";
   import ResumeOverlay from "./ResumeOverlay.svelte";
-  import { masterUrl, type Lang } from "./anidb";
+  import { masterUrl, UpstreamDownError, type Lang } from "./anidb";
 
   interface Props {
     episodeId: number | null;
@@ -289,6 +289,11 @@
     video.load();
   }
 
+  /** anidb.app itself is not answering; say so rather than "could not load". */
+  function downMessage(status: number): string {
+    return `anidb.app is probably down${status ? ` (it answered ${status})` : ""}. Nothing here is broken; try again in a few minutes.`;
+  }
+
   async function load(key: string, id: number | null, want: Lang) {
     teardown();
     requestedKey = key;
@@ -297,8 +302,13 @@
     let resolved: Awaited<ReturnType<typeof masterUrl>>;
     try {
       resolved = await masterUrl(id, want);
-    } catch {
-      fail(key, "Could not load the stream.");
+    } catch (err) {
+      fail(
+        key,
+        err instanceof UpstreamDownError
+          ? downMessage(err.status)
+          : "Could not load the stream."
+      );
       return;
     }
     if (disposed || key !== requestedKey) return;
@@ -347,7 +357,13 @@
       // stops. Non-fatal errors stay hls.js's own business (gap jumps, a 503
       // from the relay's concurrency ceiling, a single stalled segment).
       let fatalStreak = 0;
-      hls.on(Hls.Events.FRAG_LOADED, () => (fatalStreak = 0));
+      // The stream proxy relays anidb.app's own 5xx; a few of those in a row
+      // is the site being down, not a bad segment worth eight retries.
+      let downStreak = 0;
+      hls.on(Hls.Events.FRAG_LOADED, () => {
+        fatalStreak = 0;
+        downStreak = 0;
+      });
       hls.on(Hls.Events.ERROR, (_event, data) => {
         // Every error, fatal or not: a stalled party used to leave nothing
         // in the console but the network tab's own "canceled" rows.
@@ -358,6 +374,13 @@
           status: (data.response as { code?: number } | undefined)?.code,
           url: data.frag?.url ?? (data as { url?: string }).url,
         });
+        const status = (data.response as { code?: number } | undefined)?.code;
+        if (status === 502 || status === 503) {
+          if (++downStreak >= 3) {
+            fail(key, downMessage(status));
+            return;
+          }
+        }
         if (!data.fatal || !hls) return;
         if (++fatalStreak > 8) {
           fail(key, "Could not load the stream.");
@@ -523,5 +546,17 @@
   {#if needsResumeClick}
     <ResumeOverlay onclick={resumePlayback} />
   {/if}
-  {#if error}<p class="text-xs text-destructive">{error}</p>{/if}
+  {#if error}
+    <!-- Centred on the picture, on both surfaces this player renders in: a
+         small line under the video was easy to miss in a call tile, and it
+         read as the player being broken rather than the source. -->
+    <div
+      class="pointer-events-none absolute inset-0 z-30 grid place-items-center bg-black/60 p-4 text-center"
+      role="alert"
+    >
+      <p class="max-w-xs rounded-md bg-black/80 px-3 py-2 font-mono text-xs leading-relaxed text-white">
+        {error}
+      </p>
+    </div>
+  {/if}
 </div>
