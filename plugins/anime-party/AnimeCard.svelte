@@ -11,6 +11,7 @@
     Play,
     Search,
     SkipBack,
+    PictureInPicture2,
     SkipForward,
     Trash2,
   } from "@lucide/svelte";
@@ -105,6 +106,10 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   let addOpen = $state(false);
   let error = $state("");
   let player = $state<AnimePlayer | null>(null);
+  // Chromium and Safari have the API; Firefox floats videos only from its
+  // own hover toggle, so the button would do nothing there.
+  const pipAvailable =
+    typeof document !== "undefined" && document.pictureInPictureEnabled === true;
   let playerHover = $state(false);
   // Sub or dub: this DEVICE's preference, read from plugin storage and
   // never sent to the room. Two members can watch the same second of the
@@ -408,6 +413,8 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       playing: anime.playing,
       onPlay: () => void togglePlayback(),
       onPause: () => void togglePlayback(),
+      // Chromium floats this element on a tab switch while it plays.
+      pipVideo: player?.element() ?? undefined,
       onNext: () => void goNext(),
       onPrevious: () => void previous(),
     });
@@ -1129,6 +1136,22 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
                   >
                 {/snippet}
               </Tip>
+              {#if pipAvailable}
+                <Tip text="Picture in picture">
+                  {#snippet children(props)}
+                    <button
+                      {...props}
+                      class="rounded border border-border px-3 py-2"
+                      onclick={() => {
+                        const v = player?.element();
+                        if (v) void host.pictureInPicture(v);
+                      }}
+                      aria-label="Picture in picture"
+                      ><PictureInPicture2 class="size-4" /></button
+                    >
+                  {/snippet}
+                </Tip>
+              {/if}
             {/if}
             <Tip text={queueOpen ? "Hide queue" : "Show queue"}>
               {#snippet children(props)}

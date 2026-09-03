@@ -358,6 +358,8 @@
       playing: anime.playing,
       onPlay: () => void togglePlayback(),
       onPause: () => void togglePlayback(),
+      // Chromium floats this element on a tab switch while it plays.
+      pipVideo: player?.element() ?? undefined,
       onNext: () => void skip(),
       onPrevious: () => void previous(),
     });

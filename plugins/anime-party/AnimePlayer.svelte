@@ -238,6 +238,11 @@
     }
   }
 
+  /** The media element, for the host's picture-in-picture surfaces. */
+  export function element(): HTMLVideoElement | null {
+    return video;
+  }
+
   export function currentTime(): number {
     const current = video?.currentTime;
     return typeof current === "number" && Number.isFinite(current)
