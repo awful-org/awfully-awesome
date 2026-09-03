@@ -109,7 +109,9 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   // Chromium and Safari have the API; Firefox floats videos only from its
   // own hover toggle, so the button would do nothing there.
   const pipAvailable =
-    typeof document !== "undefined" && document.pictureInPictureEnabled === true;
+    typeof document !== "undefined" &&
+    document.pictureInPictureEnabled === true &&
+    typeof host.pictureInPicture === "function";
   let playerHover = $state(false);
   // Sub or dub: this DEVICE's preference, read from plugin storage and
   // never sent to the room. Two members can watch the same second of the
