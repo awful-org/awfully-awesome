@@ -5,7 +5,7 @@ export const manifest: PluginManifest = {
   name: "Soundboard",
   description: "Crop personal MP3 clips and play them through your call audio.",
   icon: "lucide:audio-lines",
-  author: "Gustavo Walk",
+  author: "awful-org",
   license: "MIT",
   version: "1.0.0",
   repository: "https://github.com/awful-org/awfully-awesome",

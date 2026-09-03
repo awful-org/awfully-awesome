@@ -282,12 +282,15 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       () => player?.currentTime() ?? localPosition
     );
     return () => {
-      parkHandoff(
-        current,
-        player?.currentTime() ?? localPosition,
-        duration,
-        music.playing
-      );
+      // Nothing to park for a party with no current video.
+      if (current !== null) {
+        parkHandoff(
+          current,
+          player?.currentTime() ?? localPosition,
+          duration,
+          music.playing
+        );
+      }
       unregister();
     };
   });
@@ -771,7 +774,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     </div>{:else if !joined}<p
       class="py-5 text-center text-sm text-muted-foreground"
     >
-      Join this party to listen together :3
+      Join this party to listen together
     </p>{:else if joined && pendingPlaylist}<p
       class="text-sm text-muted-foreground"
     >

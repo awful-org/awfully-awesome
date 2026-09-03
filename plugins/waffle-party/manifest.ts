@@ -5,7 +5,7 @@ export const manifest: PluginManifest = {
   name: "Waffle Party",
   description: "Queue YouTube videos to watch or listen together.",
   icon: "lucide:music",
-  author: "Gustavo Walk",
+  author: "awful-org",
   license: "MIT",
   version: "1.2.6",
   repository: "https://github.com/awful-org/awfully-awesome",

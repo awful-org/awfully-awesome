@@ -17,7 +17,10 @@
   }
 
   let { card, cardState, host }: Props = $props();
-  const state = $derived(cardState as RouletteState);
+  // Not `state`: a local by that name makes the compiler read every
+  // `$state(...)` below as a store subscription to it, and the card fails
+  // to compile under svelte-check.
+  const roulette = $derived(cardState as RouletteState);
 
   let profileInput = $state("");
   let linking = $state(false);
@@ -34,7 +37,7 @@
     });
   });
 
-  const common = $derived(commonGames(state));
+  const common = $derived(commonGames(roulette));
 
   /** appid -> is-multiplayer, resolved lazily once a common set exists. */
   let mpFlags = $state<Record<string, boolean>>({});
@@ -63,7 +66,7 @@
   // old 350ms (~170/min) guaranteed 429s from our own relay after ten apps.
   $effect(() => {
     const ids = common;
-    if (mpStopped || !multiplayerOnly || ids.length === 0 || state.spun || mpBusy)
+    if (mpStopped || !multiplayerOnly || ids.length === 0 || roulette.spun || mpBusy)
       return;
     const missing = ids.filter((id) => !(String(id) in mpFlags));
     if (missing.length === 0) return;
@@ -96,7 +99,7 @@
     multiplayerOnly && mpPool.length > 0 ? mpPool : common
   );
   const linkedMembers = $derived(
-    [...state.libraries.values()].map((lib) => ({
+    [...roulette.libraries.values()].map((lib) => ({
       name: lib.name,
       done: isComplete(lib),
       count: isComplete(lib)
@@ -104,12 +107,12 @@
         : null,
     }))
   );
-  const iLinked = $derived(state.libraries.has(host.selfDid()));
+  const iLinked = $derived(roulette.libraries.has(host.selfDid()));
 
   // Slot-machine highlight easing onto the (already deterministic) winner.
-  // Rolls over the pool the spin ACTUALLY drew from (state.pool, e.g. the
+  // Rolls over the pool the spin ACTUALLY drew from (roulette.pool, e.g. the
   // multiplayer-only subset), not the full common set.
-  const rollPool = $derived(state.pool.length >= 2 ? state.pool : common);
+  const rollPool = $derived(roulette.pool.length >= 2 ? roulette.pool : common);
   let rolling = $state(false);
   let rollIndex = $state(0);
   let sawUnspun = false;
@@ -123,13 +126,13 @@
     matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   $effect(() => {
-    if (!state.spun || state.winnerAppid === null) {
+    if (!roulette.spun || roulette.winnerAppid === null) {
       sawUnspun = true;
       animPlayed = false;
       return;
     }
     if (animPlayed || !sawUnspun || reducedMotion || rollPool.length < 2) return;
-    const target = rollPool.indexOf(state.winnerAppid);
+    const target = rollPool.indexOf(roulette.winnerAppid);
     if (target === -1) return;
     animPlayed = true;
     rolling = true;
@@ -187,7 +190,7 @@
 
   let spinError = $state<string | null>(null);
   async function spin() {
-    if (spinningSend || state.spun || common.length === 0) return;
+    if (spinningSend || roulette.spun || common.length === 0) return;
     spinningSend = true;
     spinError = null;
     try {
@@ -213,7 +216,7 @@
 
   let respinSend = $state(false);
   async function respin() {
-    if (respinSend || !state.spun) return;
+    if (respinSend || !roulette.spun) return;
     respinSend = true;
     try {
       await host.sendUpdate(card.id, { action: "respin" });
@@ -233,7 +236,7 @@
 <div class="flex w-full flex-col gap-3 font-mono">
   <div class="text-sm font-semibold">Steam roulette</div>
 
-  {#if !state.spun}
+  {#if !roulette.spun}
     <div class="flex flex-col gap-1 text-xs text-muted-foreground">
       {#each linkedMembers as m (m.name)}
         <div>
@@ -299,10 +302,10 @@
     {:else if linkedMembers.filter((m) => m.done).length >= 2}
       <div class="text-xs text-destructive">No games in common. Tragic.</div>
     {/if}
-  {:else if state.winnerAppid !== null}
+  {:else if roulette.winnerAppid !== null}
     {#if rolling}
       <div class="text-xs text-muted-foreground">
-        {state.spinnerName} is spinning...
+        {roulette.spinnerName} is spinning...
       </div>
       <div class="flex flex-col gap-0.5 text-xs">
         {#each rollPool.slice(Math.max(0, rollIndex - 2), rollIndex + 3) as appid (appid)}
@@ -313,28 +316,28 @@
       </div>
     {:else}
       <a
-        href={`https://store.steampowered.com/app/${state.winnerAppid}`}
+        href={`https://store.steampowered.com/app/${roulette.winnerAppid}`}
         target="_blank"
         rel="noopener noreferrer"
         class="block max-w-sm overflow-hidden rounded-md border border-border hover:border-primary/60 transition-colors"
       >
         <img
-          src={`https://cdn.cloudflare.steamstatic.com/steam/apps/${state.winnerAppid}/header.jpg`}
-          alt={nameFor(state.winnerAppid)}
+          src={`https://cdn.cloudflare.steamstatic.com/steam/apps/${roulette.winnerAppid}/header.jpg`}
+          alt={nameFor(roulette.winnerAppid)}
           class="w-full"
           loading="lazy"
         />
       </a>
       <a
-        href={`https://store.steampowered.com/app/${state.winnerAppid}`}
+        href={`https://store.steampowered.com/app/${roulette.winnerAppid}`}
         target="_blank"
         rel="noopener noreferrer"
         class="text-sm font-bold text-primary hover:underline"
       >
-        {nameFor(state.winnerAppid)}
+        {nameFor(roulette.winnerAppid)}
       </a>
       <div class="text-xs text-muted-foreground">
-        Spun by {state.spinnerName} - {state.potSize} games were in the pot
+        Spun by {roulette.spinnerName} - {roulette.potSize} games were in the pot
       </div>
       <Button
         size="sm"

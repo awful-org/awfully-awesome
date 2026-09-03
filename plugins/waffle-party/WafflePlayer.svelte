@@ -148,12 +148,14 @@
       options: Record<string, unknown>
     ) => WaffleEmbedPlayer;
   }
-  declare global {
-    interface Window {
-      YT?: WaffleEmbedApi;
-      onYouTubeIframeAPIReady?: () => void;
-    }
-  }
+  // The iframe API hangs itself on window. Not a `declare global`: a
+  // component script is not a top-level module, so an ambient declaration
+  // there is an error; a typed view of window says the same thing.
+  type YtWindow = Window & {
+    YT?: WaffleEmbedApi;
+    onYouTubeIframeAPIReady?: () => void;
+  };
+  const yt = (): YtWindow => window as YtWindow;
 
   let mount: HTMLDivElement;
   let player: WaffleEmbedPlayer | null = null;
@@ -165,7 +167,9 @@
   let disposed = false;
   let needsResumeClick = $state(false);
   let reportedPlaylist = "";
-  let playlistReporter: ReturnType<typeof window.setInterval> | null = null;
+  // A DOM interval id. ReturnType<typeof setInterval> resolves to Node's
+  // Timeout with @types/node in scope, which window.setInterval never returns.
+  let playlistReporter: number | null = null;
   const autoplayResume = createAutoplayResumeController({
     isPlaying: () => playing,
     volume: () => volume,
@@ -175,15 +179,17 @@
   });
 
   function loadApi(): Promise<WaffleEmbedApi> {
-    if (window.YT?.Player) return Promise.resolve(window.YT);
+    const loaded = yt().YT;
+    if (loaded?.Player) return Promise.resolve(loaded);
     if (youtubeApiPromise) return youtubeApiPromise as Promise<WaffleEmbedApi>;
     youtubeApiPromise = new Promise<WaffleEmbedApi>((resolve, reject) => {
-      const finish = () =>
-        window.YT?.Player
-          ? resolve(window.YT)
-          : reject(new Error("YouTube API unavailable"));
-      const prior = window.onYouTubeIframeAPIReady;
-      window.onYouTubeIframeAPIReady = () => {
+      const finish = () => {
+        const api = yt().YT;
+        if (api?.Player) resolve(api);
+        else reject(new Error("YouTube API unavailable"));
+      };
+      const prior = yt().onYouTubeIframeAPIReady;
+      yt().onYouTubeIframeAPIReady = () => {
         prior?.();
         finish();
       };
@@ -196,7 +202,7 @@
         next.onerror = () => reject(new Error("YouTube API failed to load"));
         document.head.append(next);
       }
-      if (window.YT?.Player) finish();
+      if (yt().YT?.Player) finish();
     });
     return youtubeApiPromise as Promise<WaffleEmbedApi>;
   }

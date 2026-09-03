@@ -33,7 +33,7 @@ party starts playing when it has a selected track, and a listener joining an
 active party is synchronized to the live selected track, position, and playing
 state. Browser autoplay policy can still require that listener to press Play.
 
-After closing a populated party, its creator can use **Recruwuate party :3** on
+After closing a populated party, its creator can use **Start again** on
 only their latest closed party in that room, provided they are not already in
 another active party. It opens a new party with the same queue and selected
 track, without carrying members or activity forward.

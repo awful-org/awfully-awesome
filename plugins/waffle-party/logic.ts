@@ -156,6 +156,8 @@ export function initialState(cardData: unknown): MusicState {
     videoId?: unknown;
     playlistId?: unknown;
     ownerDid?: unknown;
+    queue?: unknown;
+    currentIndex?: unknown;
   } | null;
   const videoId = validVideoId(data?.videoId) ? data.videoId : null;
   const suppliedQueue = Array.isArray(data?.queue)

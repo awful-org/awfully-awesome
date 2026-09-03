@@ -5,7 +5,7 @@ export const manifest: PluginManifest = {
   name: "Anime Party",
   description: "Watch anime together, synced, from anidb.app.",
   icon: "lucide:tv",
-  author: "Gustavo Walk",
+  author: "awful-org",
   license: "MIT",
   version: "0.1.0",
   repository: "https://github.com/awful-org/awfully-awesome",
