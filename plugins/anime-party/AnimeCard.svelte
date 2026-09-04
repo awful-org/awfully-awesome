@@ -858,7 +858,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     {/if}
   {:else if anime.closed}
     <p class="py-8 text-center text-sm text-muted-foreground">
-      The party is over.. heh..~
+      This party has ended.
     </p>
     {#if canRecreate}<Tip text="Start a new party with the same queue">
         {#snippet children(props)}
@@ -936,7 +936,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       {/if}
       {#if !joined}
         <p class="py-3 text-center text-sm text-muted-foreground">
-          Join this party to pick a show together :3
+          Join this party to pick a show together.
         </p>
       {/if}
     </div>
@@ -1041,7 +1041,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     </div>
   {:else if !joined}
     <p class="py-5 text-center text-sm text-muted-foreground">
-      Join this party to watch together :3
+      Join this party to watch together.
     </p>
   {:else}
     <div class="space-y-1">
