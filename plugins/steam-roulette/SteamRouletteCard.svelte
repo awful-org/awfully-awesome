@@ -5,6 +5,8 @@
   import {
     commonGames,
     isComplete,
+    ROLL_ROWS,
+    rollWindow as rollWindow_,
     sampleSpinPool,
     type RouletteState,
   } from "./logic";
@@ -113,6 +115,7 @@
   // Rolls over the pool the spin ACTUALLY drew from (roulette.pool, e.g. the
   // multiplayer-only subset), not the full common set.
   const rollPool = $derived(roulette.pool.length >= 2 ? roulette.pool : common);
+  const rollWindow = $derived(rollWindow_(rollPool, rollIndex));
   let rolling = $state(false);
   let rollIndex = $state(0);
   let sawUnspun = false;
@@ -239,7 +242,7 @@
   {#if !roulette.spun}
     <div class="flex flex-col gap-1 text-xs text-muted-foreground">
       {#each linkedMembers as m (m.name)}
-        <div>
+        <div class="truncate">
           {m.name}:
           {#if m.done}{m.count} games{:else}linking...{/if}
         </div>
@@ -307,9 +310,17 @@
       <div class="text-xs text-muted-foreground">
         {roulette.spinnerName} is spinning...
       </div>
+      <!-- Keyed by position, not appid: a pool shorter than the window
+           repeats one, and duplicate keys are an error. Each row is one line
+           tall and truncates, so a long title cannot wrap and resize the
+           card mid-spin. -->
       <div class="flex flex-col gap-0.5 text-xs">
-        {#each rollPool.slice(Math.max(0, rollIndex - 2), rollIndex + 3) as appid (appid)}
-          <div class={appid === rollPool[rollIndex] ? "text-primary font-bold" : "text-muted-foreground"}>
+        {#each rollWindow as appid, i (i)}
+          <div
+            class="h-4 truncate leading-4 {i === Math.floor(ROLL_ROWS / 2)
+              ? 'text-primary font-bold'
+              : 'text-muted-foreground'}"
+          >
             {nameFor(appid)}
           </div>
         {/each}
@@ -321,11 +332,15 @@
         rel="noopener noreferrer"
         class="block max-w-sm overflow-hidden rounded-md border border-border hover:border-primary/60 transition-colors"
       >
+        <!-- Steam header art is 460x215. Declaring the ratio reserves the
+             space before the bytes arrive, so the card does not grow by two
+             hundred pixels a moment after it appears. Not lazy: this is the
+             thing the card exists to show, and deferring it only moves the
+             jump later. -->
         <img
           src={`https://cdn.cloudflare.steamstatic.com/steam/apps/${roulette.winnerAppid}/header.jpg`}
           alt={nameFor(roulette.winnerAppid)}
-          class="w-full"
-          loading="lazy"
+          class="aspect-[460/215] w-full bg-muted object-cover"
         />
       </a>
       <a

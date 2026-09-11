@@ -182,3 +182,33 @@ export const reduce = function (
 
   return state;
 };
+
+/**
+ * Rows the spinning list shows, and how many of them there always are.
+ *
+ * The card used to take a slice around the index, which gave three rows at
+ * the top of the pool, five in the middle and fewer at the bottom - so it
+ * changed height on almost every frame of the animation and shoved the rest
+ * of the chat down. A window that WRAPS is the same size wherever the index
+ * sits, which is what stops the card moving.
+ *
+ * The highlighted row is always the middle one, so the caller highlights by
+ * position rather than by comparing appids - a pool shorter than the window
+ * repeats entries, and then more than one would match.
+ */
+export const ROLL_ROWS = 5;
+
+export function rollWindow(
+  pool: readonly number[],
+  index: number,
+  rows = ROLL_ROWS
+): number[] {
+  const n = pool.length;
+  if (n === 0 || rows <= 0) return [];
+  const middle = Math.floor(rows / 2);
+  return Array.from({ length: rows }, (_, i) => {
+    // + n * rows keeps the modulo positive however far left of zero it lands.
+    const at = (index - middle + i + n * rows) % n;
+    return pool[at];
+  });
+}

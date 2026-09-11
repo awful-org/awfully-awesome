@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   initialState,
   reduce,
+  ROLL_ROWS,
+  rollWindow,
   sampleSpinPool,
   SPIN_POOL_CAP,
   type RouletteState,
@@ -99,5 +101,39 @@ describe("sampleSpinPool", () => {
     const bigSet = new Set(big);
     expect(a.every((id) => bigSet.has(id))).toBe(true);
     expect([...a].sort((x, y) => x - y)).toEqual(a);
+  });
+});
+
+describe("the spinning window", () => {
+  const pool = [10, 20, 30, 40, 50, 60, 70];
+
+  it("is the same size wherever the index is", () => {
+    // The bug it replaces: a slice gave three rows near the start and five in
+    // the middle, so the card changed height on almost every frame and shoved
+    // the chat below it around.
+    for (let i = 0; i < pool.length; i++) {
+      expect(rollWindow(pool, i)).toHaveLength(ROLL_ROWS);
+    }
+  });
+
+  it("centres the index, so the middle row is the one that won", () => {
+    expect(rollWindow(pool, 3)).toEqual([20, 30, 40, 50, 60]);
+    expect(rollWindow(pool, 3)[Math.floor(ROLL_ROWS / 2)]).toBe(pool[3]);
+  });
+
+  it("wraps at both ends rather than running short", () => {
+    expect(rollWindow(pool, 0)).toEqual([60, 70, 10, 20, 30]);
+    expect(rollWindow(pool, 6)).toEqual([50, 60, 70, 10, 20]);
+  });
+
+  it("fills the window from a pool smaller than it", () => {
+    // Two entries repeat to fill five rows, which is why the card keys those
+    // rows by position: keying by appid would be a duplicate-key error.
+    expect(rollWindow([1, 2], 0)).toHaveLength(ROLL_ROWS);
+    expect(new Set(rollWindow([1, 2], 0))).toEqual(new Set([1, 2]));
+  });
+
+  it("has nothing to show for an empty pool", () => {
+    expect(rollWindow([], 0)).toEqual([]);
   });
 });
