@@ -4,6 +4,7 @@ import {
   deleteSound,
   DEFAULT_SOUND_VOLUME,
   listSounds,
+  MAX_STORED_SOUND_SECONDS,
   onLibraryChange,
   putSound,
   resetSoundboardStorageForTests,
@@ -58,11 +59,13 @@ describe("soundboard storage", () => {
     expect(listener).toHaveBeenCalledTimes(3);
   });
 
-  it("rejects records outside the nine slots or five-second bound", async () => {
-    await expect(putSound({ ...sound("did:a", 9), durationMs: 5000 })).resolves.toBeUndefined();
-    expect((await listSounds("did:a"))[0].durationMs).toBe(5000);
+  it("rejects records outside the slots or persistent duration guardrail", async () => {
+    const boundaryMs = MAX_STORED_SOUND_SECONDS * 1000;
+    await expect(putSound({ ...sound("did:a", 9), durationMs: boundaryMs }))
+      .resolves.toBeUndefined();
+    expect((await listSounds("did:a"))[0].durationMs).toBe(boundaryMs);
     await expect(putSound(sound("did:a", 10))).rejects.toThrow("Invalid");
-    await expect(putSound({ ...sound("did:a", 1), durationMs: 5001 }))
+    await expect(putSound({ ...sound("did:a", 1), durationMs: boundaryMs + 1 }))
       .rejects.toThrow("Invalid");
   });
 

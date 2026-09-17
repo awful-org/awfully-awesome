@@ -1,10 +1,18 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import type { HostApi } from "$lib/plugins/api";
-  import { validateMp3File } from "./import";
+  import { MIN_CLIP_SECONDS } from "./crop";
+  import { MAX_IMPORT_BYTES, MAX_SOURCE_SECONDS, validateMp3File } from "./import";
   import { CropPreviewPlayer, type PreviewState } from "./preview";
   import SoundCropEditor from "./SoundCropEditor.svelte";
-  import { deleteSound, listSounds, onLibraryChange, updateSound, type SoundRecord } from "./storage";
+  import {
+    deleteSound,
+    listSounds,
+    MAX_STORED_SOUND_SECONDS,
+    onLibraryChange,
+    updateSound,
+    type SoundRecord,
+  } from "./storage";
   import { soundGlyph } from "./glyph";
   import EmojiPickerPopup from "$lib/components/EmojiPickerPopup.svelte";
 
@@ -13,6 +21,7 @@
   const ownerDid = host.selfDid();
   let sounds = $state<SoundRecord[]>([]);
   let loading = $state(true);
+  let importing = $state(false);
   let error = $state("");
   let targetSlot = $state<number | null>(null);
   let cropSource = $state<AudioBuffer | null>(null);
@@ -30,10 +39,22 @@
   let editPreviewState = $state<PreviewState>("idle");
   let deleteTarget = $state<SoundRecord | null>(null);
   let activeTimer: ReturnType<typeof setTimeout> | null = null;
+  let importGeneration = 0;
   let unsubscribe = () => {};
+
+  function hostClipSeconds() {
+    const seconds = host.callAudio.maxDurationMs / 1000;
+    return Number.isFinite(seconds) && seconds >= MIN_CLIP_SECONDS ? seconds : 5;
+  }
 
   const bySlot = $derived(new Map(sounds.map((sound) => [sound.slot, sound])));
   const blocked = $derived(host.callAudio.blockedReason());
+  const maxClipSeconds = $derived(Math.max(
+    MIN_CLIP_SECONDS,
+    Math.min(MAX_STORED_SOUND_SECONDS, hostClipSeconds()),
+  ));
+  const importLimitMiB = MAX_IMPORT_BYTES / (1024 * 1024);
+  const importLimitMinutes = MAX_SOURCE_SECONDS / 60;
   const editPreview = new CropPreviewPlayer(undefined, undefined, undefined, (state) => { editPreviewState = state; });
 
   async function reload() {
@@ -57,6 +78,7 @@
     unsubscribe = onLibraryChange(() => void reload());
   });
   onDestroy(() => {
+    importGeneration++;
     unsubscribe();
     if (activeTimer) clearTimeout(activeTimer);
     host.callAudio.stop(activePlayback ?? undefined);
@@ -64,24 +86,29 @@
   });
 
   function choose(slot: number) {
-    if (sounds.length >= 9 || !ownerDid) return;
+    if (importing || sounds.length >= 9 || !ownerDid) return;
     targetSlot = slot;
     fileInput?.click();
   }
 
   async function selected(file: File | undefined) {
     if (!file || targetSlot === null) return;
+    const generation = ++importGeneration;
+    importing = true;
     error = "";
     const context = new AudioContext();
     try {
       const result = await validateMp3File(file, (bytes) => context.decodeAudioData(bytes));
+      if (generation !== importGeneration) return;
       cropSource = result.buffer;
       cropName = file.name;
     } catch (cause) {
+      if (generation !== importGeneration) return;
       error = cause instanceof Error ? cause.message : "The MP3 could not be opened";
       targetSlot = null;
     } finally {
       await context.close().catch(() => {});
+      if (generation === importGeneration) importing = false;
       if (fileInput) fileInput.value = "";
     }
   }
@@ -132,6 +159,11 @@
     error = "";
   }
 
+  function setEditVolume(value: number) {
+    editVolume = value;
+    editPreview.setVolume(0.8 * editVolume);
+  }
+
   async function previewEdit() {
     if (!editing) return;
     if (editPreviewState !== "idle") {
@@ -170,6 +202,7 @@
     sourceName={cropName}
     {ownerDid}
     slot={targetSlot}
+    {maxClipSeconds}
     onSaved={() => { cropSource = null; targetSlot = null; void reload(); }}
     onCancel={() => { cropSource = null; targetSlot = null; }}
   />
@@ -178,13 +211,17 @@
     <div class="flex items-start justify-between gap-3">
       <div>
         <p class="text-sm font-semibold">Your sounds</p>
-        <p class="text-[11px] text-muted-foreground">Private to this identity and device. MP3, 8 MiB, 5-second crop.</p>
+        <p class="text-[11px] text-muted-foreground">
+          Private to this identity and device. MP3 up to {importLimitMiB} MiB / {importLimitMinutes} min;
+          crop up to {maxClipSeconds}s.
+        </p>
       </div>
       <span class="font-mono text-xs text-muted-foreground">{sounds.length}/9</span>
     </div>
 
     {#if blocked === "not-in-call"}<p class="text-xs text-muted-foreground">Join the call to play. You can still manage sounds.</p>{/if}
     {#if blocked === "deafened"}<p class="text-xs text-muted-foreground">Undeafen to play.</p>{/if}
+    {#if importing}<p class="text-xs text-muted-foreground" role="status">Opening audio…</p>{/if}
     {#if error}<p class="text-xs text-destructive" role="alert">{error}</p>{/if}
 
     {#if editing}
@@ -216,7 +253,7 @@
         />
         <label class="block space-y-1 text-xs">
           <span>Volume: {Math.round(editVolume * 100)}%</span>
-          <input class="w-full" type="range" min="0" max="1" step="0.01" bind:value={editVolume} oninput={() => editPreview.stop()} />
+          <input class="w-full" type="range" min="0" max="1" step="0.01" value={editVolume} oninput={(event) => setEditVolume(+event.currentTarget.value)} />
         </label>
         <div class="flex justify-end gap-2">
           <button type="button" class="cursor-pointer rounded-md border px-3 py-1.5 text-xs" onclick={() => { editPreview.stop(); editing = null; }}>Cancel</button>
@@ -263,7 +300,7 @@
           <button
             type="button"
             class="h-20 min-w-0 cursor-pointer rounded-md border border-dashed border-border text-xl text-muted-foreground hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-            disabled={loading || sounds.length >= 9 || !ownerDid}
+            disabled={loading || importing || sounds.length >= 9 || !ownerDid}
             aria-label={`Add sound to slot ${slot}`}
             onclick={() => choose(slot)}
           >+</button>

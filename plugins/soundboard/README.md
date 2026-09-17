@@ -3,10 +3,11 @@
 Run `/soundboard` to open a private nine-slot soundboard, and pin it to a
 sidebar slot (the dotted "+ pin" boxes) to play sounds from anywhere - each
 sound's emoji becomes its one-tap button in the strip. The panel appears
-only on your device and never becomes a room message. Import an MP3, choose a
-segment from 0.25 through 5 seconds, preview it locally, set its volume, name it,
-and save it with an emoji. Saved sounds can be renamed or have their volume
-and emoji adjusted later.
+only on your device and never becomes a room message. Import an MP3 up to ten
+minutes long, choose a segment within the host's call-sound duration limit,
+preview it locally, adjust its volume while it plays, name it, and save it with
+an emoji. Saved sounds can be renamed or have their volume and emoji adjusted
+later.
 Clicking a saved tile mixes the clip into your outgoing P2P call audio, so the
 people in the call hear it as audio from you. It still plays while your
 microphone is muted; it is disabled while you are deafened or outside a call.
@@ -14,9 +15,10 @@ microphone is muted; it is disabled while you are deafened or outside a call.
 ## Limits and privacy
 
 - Nine sounds per identity on each device.
-- MP3 imports only, at most 8 MiB and two minutes long.
+- MP3 imports only, at most 32 MiB and ten minutes long.
 - Mono or stereo sources; saved clips are normalized to mono 48 kHz WAV.
-- Saved clips are between 0.25 and 5 seconds.
+- Saved clips are between 0.25 seconds and the host's exposed call-audio limit
+  (five seconds on current hosts).
 - Sound bytes live in IndexedDB and do not sync to paired devices.
 - Imports, playback and deletion send no plugin updates, files or chat messages.
 - Starting a sound stops your currently playing sound.

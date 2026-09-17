@@ -2,6 +2,8 @@ import { openDB, type IDBPDatabase } from "idb";
 
 export const MAX_SOUNDS = 9;
 export const DEFAULT_SOUND_VOLUME = 0.5;
+/** Persistent guardrail for future hosts with a larger call-audio ceiling. */
+export const MAX_STORED_SOUND_SECONDS = 60;
 const DB_NAME = "awful-plugin-soundboard";
 const STORE = "sounds";
 
@@ -39,7 +41,9 @@ function valid(record: unknown): record is SoundRecord {
     typeof sound.id === "string" &&
     typeof sound.name === "string" &&
     sound.blob instanceof Blob &&
-    typeof sound.durationMs === "number" && sound.durationMs >= 250 && sound.durationMs <= 5000 &&
+    typeof sound.durationMs === "number" &&
+    sound.durationMs >= 250 &&
+    sound.durationMs <= MAX_STORED_SOUND_SECONDS * 1000 &&
     (sound.volume === undefined ||
       (typeof sound.volume === "number" && Number.isFinite(sound.volume) && sound.volume >= 0 && sound.volume <= 1)) &&
     (sound.emoji === undefined ||
