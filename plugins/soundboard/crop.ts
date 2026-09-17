@@ -1,6 +1,7 @@
 export const MIN_CLIP_SECONDS = 0.25;
 export const MAX_CLIP_SECONDS = 5;
 export const OUTPUT_SAMPLE_RATE = 48_000;
+export const MAX_WAVEFORM_SAMPLES_PER_BUCKET = 2048;
 
 export interface CropSelection {
   startSeconds: number;
@@ -9,17 +10,21 @@ export interface CropSelection {
 
 export function clampSelection(
   selection: CropSelection,
-  sourceDuration: number
+  sourceDuration: number,
+  maxClipSeconds = MAX_CLIP_SECONDS,
 ): CropSelection {
   if (!Number.isFinite(sourceDuration) || sourceDuration < MIN_CLIP_SECONDS) {
     throw new Error("Source is too short");
   }
+  if (!Number.isFinite(maxClipSeconds) || maxClipSeconds < MIN_CLIP_SECONDS) {
+    throw new Error("Maximum clip duration is invalid");
+  }
   let start = Math.max(0, Math.min(selection.startSeconds, sourceDuration - MIN_CLIP_SECONDS));
   let end = Math.max(start + MIN_CLIP_SECONDS, Math.min(selection.endSeconds, sourceDuration));
-  if (end - start > MAX_CLIP_SECONDS) end = start + MAX_CLIP_SECONDS;
+  if (end - start > maxClipSeconds) end = start + maxClipSeconds;
   if (end > sourceDuration) {
     end = sourceDuration;
-    start = Math.max(0, end - MAX_CLIP_SECONDS);
+    start = Math.max(0, end - maxClipSeconds);
   }
   return { startSeconds: start, endSeconds: end };
 }
@@ -31,9 +36,18 @@ export function buildWaveform(buffer: AudioBuffer, buckets: number): Float32Arra
   for (let bucket = 0; bucket < count; bucket++) {
     const from = Math.floor((bucket / count) * buffer.length);
     const to = Math.max(from + 1, Math.floor(((bucket + 1) / count) * buffer.length));
+    const span = Math.max(0, Math.min(buffer.length, to) - from);
+    if (span === 0) continue;
+    const sampleCount = Math.min(span, MAX_WAVEFORM_SAMPLES_PER_BUCKET);
     let peak = 0;
     for (const channel of channels) {
-      for (let i = from; i < to && i < channel.length; i++) peak = Math.max(peak, Math.abs(channel[i]));
+      for (let sample = 0; sample < sampleCount; sample++) {
+        const offset = sampleCount === 1
+          ? 0
+          : Math.floor((sample / (sampleCount - 1)) * (span - 1));
+        const index = Math.min(from + offset, channel.length - 1);
+        peak = Math.max(peak, Math.abs(channel[index] ?? 0));
+      }
     }
     result[bucket] = peak;
   }
@@ -43,9 +57,10 @@ export function buildWaveform(buffer: AudioBuffer, buckets: number): Float32Arra
 export function cropToMonoPcm(
   buffer: AudioBuffer,
   selection: CropSelection,
-  outputRate = OUTPUT_SAMPLE_RATE
+  outputRate = OUTPUT_SAMPLE_RATE,
+  maxClipSeconds = MAX_CLIP_SECONDS,
 ): Float32Array {
-  const selected = clampSelection(selection, buffer.duration);
+  const selected = clampSelection(selection, buffer.duration, maxClipSeconds);
   const duration = selected.endSeconds - selected.startSeconds;
   const outputLength = Math.max(1, Math.round(duration * outputRate));
   const output = new Float32Array(outputLength);

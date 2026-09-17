@@ -40,6 +40,28 @@ describe("CropPreviewPlayer", () => {
     expect(states.at(-1)).toBe("playing");
   });
 
+  it("adjusts and clamps volume during active playback", async () => {
+    const { audios, player } = setup();
+    await player.play(new Blob(["crop"]), 0.35);
+    player.setVolume(1.5);
+    expect(audios[0].volume).toBe(1);
+    player.setVolume(-0.5);
+    expect(audios[0].volume).toBe(0);
+    expect(() => player.setVolume(Number.NaN)).toThrow("finite");
+  });
+
+  it("adjusts volume while playback is still starting", async () => {
+    let release!: () => void;
+    const { audios, player } = setup(
+      () => new Promise<void>((resolve) => { release = resolve; })
+    );
+    const pending = player.play(new Blob(["crop"]), 0.35);
+    player.setVolume(0.7);
+    expect(audios[0].volume).toBe(0.7);
+    release();
+    await pending;
+  });
+
   it("replaces an active preview and revokes its temporary URL", async () => {
     const { audios, player, revoked } = setup();
     await player.play(new Blob(["first"]), 1);

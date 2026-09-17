@@ -2,6 +2,11 @@ export type PreviewState = "idle" | "starting" | "playing";
 
 type PreviewAudio = Pick<HTMLAudioElement, "src" | "volume" | "onended" | "play" | "pause">;
 
+function normalizeVolume(volume: number): number {
+  if (!Number.isFinite(volume)) throw new Error("Preview volume must be finite");
+  return Math.max(0, Math.min(1, volume));
+}
+
 export class CropPreviewPlayer {
   private audio: PreviewAudio | null = null;
   private objectUrl: string | null = null;
@@ -15,6 +20,7 @@ export class CropPreviewPlayer {
   ) {}
 
   async play(blob: Blob, volume: number): Promise<void> {
+    const normalizedVolume = normalizeVolume(volume);
     this.stopAudio();
     const generation = ++this.generation;
     this.stateChanged("starting");
@@ -24,7 +30,7 @@ export class CropPreviewPlayer {
     this.audio = audio;
     this.objectUrl = objectUrl;
     audio.src = objectUrl;
-    audio.volume = volume;
+    audio.volume = normalizedVolume;
     audio.onended = () => {
       if (this.audio !== audio) return;
       this.stopAudio();
@@ -41,6 +47,11 @@ export class CropPreviewPlayer {
       this.stateChanged("idle");
       throw cause;
     }
+  }
+
+  setVolume(volume: number): void {
+    const normalizedVolume = normalizeVolume(volume);
+    if (this.audio) this.audio.volume = normalizedVolume;
   }
 
   stop(): void {

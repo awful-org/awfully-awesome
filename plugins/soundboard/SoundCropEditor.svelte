@@ -10,14 +10,15 @@
     sourceName: string;
     ownerDid: string;
     slot: number;
+    maxClipSeconds: number;
     onSaved: (sound: SoundRecord) => void;
     onCancel: () => void;
   }
 
-  let { source, sourceName, ownerDid, slot, onSaved, onCancel }: Props = $props();
+  let { source, sourceName, ownerDid, slot, maxClipSeconds, onSaved, onCancel }: Props = $props();
   let start = $state(0);
   // svelte-ignore state_referenced_locally -- a new import remounts the editor
-  let end = $state(Math.min(5, source.duration));
+  let end = $state(Math.min(maxClipSeconds, source.duration));
   // svelte-ignore state_referenced_locally -- initial filename is copied into editable state
   let name = $state(sourceName.replace(/\.mp3$/i, "").slice(0, 32));
   let error = $state("");
@@ -33,6 +34,12 @@
   const duration = $derived(end - start);
   const validName = $derived([...name.trim()].length >= 1 && [...name.trim()].length <= 32);
 
+  function formatTime(value: number) {
+    const minutes = Math.floor(value / 60);
+    const seconds = value - minutes * 60;
+    return `${minutes}:${seconds.toFixed(2).padStart(5, "0")}`;
+  }
+
   function stopPreview() {
     preview.stop();
   }
@@ -43,14 +50,22 @@
 
   function setStart(value: number) {
     stopPreview();
-    const next = clampSelection({ startSeconds: value, endSeconds: Math.min(end, value + 5) }, source.duration);
+    const next = clampSelection(
+      { startSeconds: value, endSeconds: Math.min(end, value + maxClipSeconds) },
+      source.duration,
+      maxClipSeconds,
+    );
     start = next.startSeconds;
     end = next.endSeconds;
   }
 
   function setEnd(value: number) {
     stopPreview();
-    const next = clampSelection({ startSeconds: Math.max(start, value - 5), endSeconds: value }, source.duration);
+    const next = clampSelection(
+      { startSeconds: Math.max(start, value - maxClipSeconds), endSeconds: value },
+      source.duration,
+      maxClipSeconds,
+    );
     start = next.startSeconds;
     end = next.endSeconds;
   }
@@ -62,7 +77,12 @@
       return;
     }
     try {
-      const pcm = cropToMonoPcm(source, { startSeconds: start, endSeconds: end });
+      const pcm = cropToMonoPcm(
+        source,
+        { startSeconds: start, endSeconds: end },
+        undefined,
+        maxClipSeconds,
+      );
       await preview.play(encodePcm16Wav(pcm), 0.8 * volume);
     } catch (cause) {
       error = cause instanceof Error ? cause.message : "Preview playback was blocked";
@@ -74,7 +94,12 @@
     saving = true;
     error = "";
     try {
-      const pcm = cropToMonoPcm(source, { startSeconds: start, endSeconds: end });
+      const pcm = cropToMonoPcm(
+        source,
+        { startSeconds: start, endSeconds: end },
+        undefined,
+        maxClipSeconds,
+      );
       const blob = encodePcm16Wav(pcm);
       const sound: SoundRecord = {
         ownerDid,
@@ -103,14 +128,16 @@
   <div class="flex items-center justify-between gap-2">
     <div>
       <p class="text-sm font-semibold">Crop sound</p>
-      <p class="text-[11px] text-muted-foreground">Choose between 0.25 and 5 seconds.</p>
+      <p class="text-[11px] text-muted-foreground">
+        Source {formatTime(source.duration)} · choose 0.25–{formatTime(maxClipSeconds)}.
+      </p>
     </div>
     <span class="font-mono text-xs">{duration.toFixed(2)}s</span>
   </div>
 
   <div class="relative flex h-20 items-end gap-px overflow-hidden rounded bg-muted/30 px-1" aria-label="Audio waveform">
     {#each [...waveform] as peak, i (i)}
-      {@const time = (i / waveform.length) * source.duration}
+      {@const time = ((i + 0.5) / waveform.length) * source.duration}
       <div
         class="min-w-0 flex-1 rounded-t {time >= start && time <= end ? 'bg-primary' : 'bg-muted-foreground/35'}"
         style={`height: ${Math.max(4, peak * 100)}%`}
@@ -118,14 +145,38 @@
     {/each}
   </div>
 
-  <label class="block space-y-1 text-xs">
-    <span>Start: {start.toFixed(2)}s</span>
-    <input class="w-full" type="range" min="0" max={Math.max(0, source.duration - 0.25)} step="0.01" value={start} oninput={(e) => setStart(+e.currentTarget.value)} />
-  </label>
-  <label class="block space-y-1 text-xs">
-    <span>End: {end.toFixed(2)}s</span>
-    <input class="w-full" type="range" min="0.25" max={source.duration} step="0.01" value={end} oninput={(e) => setEnd(+e.currentTarget.value)} />
-  </label>
+  <div class="grid grid-cols-[minmax(0,1fr)_5.5rem] items-end gap-2">
+    <label class="block space-y-1 text-xs">
+      <span>Start: {formatTime(start)}</span>
+      <input class="w-full" type="range" min="0" max={Math.max(0, source.duration - 0.25)} step="0.01" value={start} oninput={(e) => setStart(+e.currentTarget.value)} />
+    </label>
+    <input
+      class="w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
+      type="number"
+      min="0"
+      max={Math.max(0, source.duration - 0.25)}
+      step="0.01"
+      value={start.toFixed(2)}
+      aria-label="Crop start in seconds"
+      onchange={(e) => setStart(+e.currentTarget.value)}
+    />
+  </div>
+  <div class="grid grid-cols-[minmax(0,1fr)_5.5rem] items-end gap-2">
+    <label class="block space-y-1 text-xs">
+      <span>End: {formatTime(end)}</span>
+      <input class="w-full" type="range" min="0.25" max={source.duration} step="0.01" value={end} oninput={(e) => setEnd(+e.currentTarget.value)} />
+    </label>
+    <input
+      class="w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
+      type="number"
+      min="0.25"
+      max={source.duration}
+      step="0.01"
+      value={end.toFixed(2)}
+      aria-label="Crop end in seconds"
+      onchange={(e) => setEnd(+e.currentTarget.value)}
+    />
+  </div>
 
   <div class="flex items-end gap-2">
     <label class="block min-w-0 flex-1 space-y-1 text-xs">
@@ -153,7 +204,18 @@
   />
   <label class="block space-y-1 text-xs">
     <span>Volume: {Math.round(volume * 100)}%</span>
-    <input class="w-full" type="range" min="0" max="1" step="0.01" bind:value={volume} oninput={stopPreview} />
+    <input
+      class="w-full"
+      type="range"
+      min="0"
+      max="1"
+      step="0.01"
+      value={volume}
+      oninput={(event) => {
+        volume = +event.currentTarget.value;
+        preview.setVolume(0.8 * volume);
+      }}
+    />
   </label>
   {#if !validName}<p class="text-xs text-destructive">Use a name from 1 to 32 characters.</p>{/if}
   {#if error}<p class="text-xs text-destructive" role="alert">{error}</p>{/if}
