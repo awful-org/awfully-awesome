@@ -1,6 +1,19 @@
 <script module lang="ts">
   let youtubeApiPromise: Promise<unknown> | null = null;
 
+  /**
+   * The video ids of a cued playlist, capped for the room. YouTube's
+   * getPlaylist() is null until the playlist has loaded - and onReady asks
+   * right after cueing it, before it has. Calling .filter on that threw out
+   * of onReady, so a YouTube or YouTube Music playlist never finished
+   * loading its card: onReady's own callback was skipped along with it.
+   */
+  export function playlistVideoIds(ids: readonly string[] | null | undefined): string[] {
+    // The reducer enforces QUEUE_CAP; slicing here just spares the room a
+    // doomed tail of resolve batches for a multi-thousand-video playlist.
+    return (ids ?? []).filter((id) => /^[A-Za-z0-9_-]{11}$/.test(id)).slice(0, 200);
+  }
+
   export interface AutoplayResumePlayer {
     getPlayerState(): number;
     mute(): void;
@@ -138,7 +151,8 @@
     getIframe(): HTMLIFrameElement;
     destroy(): void;
     cuePlaylist(options: { listType: "playlist"; list: string }): void;
-    getPlaylist(): string[];
+    /** Null until a cued playlist has loaded. */
+    getPlaylist(): string[] | null;
     loadModule?(module: string): void;
     unloadModule?(module: string): void;
   }
@@ -376,11 +390,9 @@
 
   function reportPlaylist() {
     if (!playlistId || playlistId === reportedPlaylist) return;
-    // The reducer enforces QUEUE_CAP; slicing here just spares the room a
-    // doomed tail of resolve batches for a multi-thousand-video playlist.
-    const videoIds = (
-      player?.getPlaylist().filter((id) => /^[A-Za-z0-9_-]{11}$/.test(id)) ?? []
-    ).slice(0, 200);
+    // Empty until the playlist has loaded; the 250ms poll and the cued
+    // state change both come back for it.
+    const videoIds = playlistVideoIds(player?.getPlaylist());
     if (!videoIds.length) return;
     reportedPlaylist = playlistId;
     if (playlistReporter) window.clearInterval(playlistReporter);

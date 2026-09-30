@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { render } from "svelte/server";
 import ResumeOverlay from "./ResumeOverlay.svelte";
-import { createAutoplayResumeController } from "./WafflePlayer.svelte";
+import { createAutoplayResumeController, playlistVideoIds } from "./WafflePlayer.svelte";
 
 function setup(playing = true) {
   vi.useFakeTimers();
@@ -90,5 +90,23 @@ describe("muted autoplay resume", () => {
     vi.advanceTimersByTime(1_000);
     expect(subject.needsClick()).toBe(false);
     vi.useRealTimers();
+  });
+});
+
+describe("playlist video ids", () => {
+  // YouTube answers null until a cued playlist has loaded, which is when
+  // onReady first asks; that used to throw and stall the card.
+  it("is empty, not a crash, before the playlist has loaded", () => {
+    expect(playlistVideoIds(null)).toEqual([]);
+    expect(playlistVideoIds(undefined)).toEqual([]);
+  });
+
+  it("keeps valid ids only, capped for the room", () => {
+    expect(playlistVideoIds(["dQw4w9WgXcQ", "bad", "", "abcdefghij_"])).toEqual([
+      "dQw4w9WgXcQ",
+      "abcdefghij_",
+    ]);
+    const many = Array.from({ length: 250 }, (_, i) => `v${String(i).padStart(10, "0")}`);
+    expect(playlistVideoIds(many)).toHaveLength(200);
   });
 });
