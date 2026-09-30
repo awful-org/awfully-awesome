@@ -84,6 +84,22 @@ export function videoIdFromUrl(input: string): string | null {
   }
 }
 
+/**
+ * The open party `selfDid` is watching among this room's cards, newest
+ * first - where `/play` queues instead of starting another party. Null when
+ * they are in none, and then `/play` starts one as it always did.
+ */
+export function partyWatchedBy(
+  cards: ReadonlyArray<{ id: string; state?: unknown }>,
+  selfDid: string
+): string | null {
+  for (let i = cards.length - 1; i >= 0; i--) {
+    const music = cards[i].state as MusicState | undefined;
+    if (music && !music.closed && music.members.has(selfDid)) return cards[i].id;
+  }
+  return null;
+}
+
 export function playlistIdFromUrl(input: string): string | null {
   try {
     const url = new URL(input);

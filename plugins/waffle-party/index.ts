@@ -5,6 +5,7 @@ import WaffleCallTile from "./WaffleCallTile.svelte";
 import WaffleWidget from "./WaffleWidget.svelte";
 import {
   initialState,
+  partyWatchedBy,
   playlistIdFromUrl,
   reduce,
   videoIdFromUrl,
@@ -47,6 +48,17 @@ export default definePlugin({
         return;
       }
       const cards = await host.cards();
+      // Watching a party already: the link joins its queue, like adding it
+      // from the queue panel, rather than closing the party for everyone to
+      // start another. Anyone not in a party starts one as before.
+      const watching = partyWatchedBy(cards, host.selfDid());
+      if (watching) {
+        await host.sendUpdate(
+          watching,
+          playlistId ? { action: "add-playlist", playlistId } : { action: "add", videoId }
+        );
+        return;
+      }
       await Promise.all(
         cards
           .filter((card) => card.senderDid === host.selfDid())

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   initialState,
+  partyWatchedBy,
   syncResponder,
   syncResponderFor,
   playlistIdFromUrl,
@@ -749,5 +750,34 @@ describe("host refresh resync", () => {
       "Carol"
     );
     expect(fromCarol.position).not.toBe(55);
+  });
+});
+
+describe("partyWatchedBy", () => {
+  const party = (owner: string, extra: Partial<MusicState> = {}) => ({
+    ...initialState({ videoId: "dQw4w9WgXcQ", ownerDid: owner }),
+    ...extra,
+  });
+
+  it("finds the open party the caller is watching, newest first", () => {
+    const joined = party("did:host");
+    joined.members.set("did:me", "Me");
+    const cards = [
+      { id: "old", state: party("did:me", { closed: true }) },
+      { id: "watching", state: joined },
+      { id: "other", state: party("did:someone-else") },
+    ];
+    expect(partyWatchedBy(cards, "did:me")).toBe("watching");
+    expect(partyWatchedBy(cards, "did:host")).toBe("watching");
+  });
+
+  it("is null for someone watching nothing, so /play starts a party", () => {
+    const cards = [
+      { id: "a", state: party("did:host") },
+      { id: "b", state: party("did:me", { closed: true }) },
+      { id: "c" },
+    ];
+    expect(partyWatchedBy(cards, "did:me")).toBeNull();
+    expect(partyWatchedBy([], "did:me")).toBeNull();
   });
 });

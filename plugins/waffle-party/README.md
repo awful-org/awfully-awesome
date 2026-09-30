@@ -13,6 +13,10 @@ Start a party with either URL type:
 /play https://www.youtube.com/playlist?list=PLAYLIST_ID
 ```
 
+While you are watching a party, `/play` adds the video or playlist to that
+party's queue instead of starting a new one. Someone who is not in a party
+starts one, as above.
+
 Open the queue to add more video or playlist URLs. Party members can select a
 numbered track, remove it, go to the previous or next track, seek, pause/play,
 adjust the local volume, and cycle looping between off, one track, and the
