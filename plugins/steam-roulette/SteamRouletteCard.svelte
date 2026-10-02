@@ -225,6 +225,8 @@
       await host.sendUpdate(card.id, { action: "respin" });
     } catch (err) {
       console.error("[steam-roulette] respin failed:", err);
+      // Spin has a line on the card for this; a failed respin said nothing.
+      if (typeof host.showError === "function") host.showError("The respin didn't go through. Try again.");
     } finally {
       respinSend = false;
     }

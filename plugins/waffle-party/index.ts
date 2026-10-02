@@ -44,8 +44,13 @@ export default definePlugin({
       const playlistId = playlistIdFromUrl(args.trim());
       const videoId = playlistId ? null : videoIdFromUrl(args.trim());
       if (!videoId && !playlistId) {
-        console.warn("[waffle-party] format: /play YouTube video or playlist URL");
-        return;
+        // Thrown, so the host says it to the person who typed it and keeps
+        // their draft; a warning in the console reached nobody.
+        throw new Error(
+          args.trim()
+            ? "That isn't a YouTube video or playlist link. Paste one: /play https://youtu.be/..."
+            : "Paste a YouTube video or playlist link: /play https://youtu.be/..."
+        );
       }
       const cards = await host.cards();
       // Watching a party already: the link joins its queue, like adding it

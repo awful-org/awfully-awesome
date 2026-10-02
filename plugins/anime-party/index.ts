@@ -34,10 +34,8 @@ export default definePlugin({
     anime: async (args: string, host: HostApi) => {
       const typed = args.trim();
       if (!typed) {
-        console.warn(
-          "[anime-party] format: /anime search terms or anidb.app show URL"
-        );
-        return;
+        // Thrown, so the host says it to the person who typed it.
+        throw new Error("Search for a show, or paste its anidb.app link: /anime frieren");
       }
       const ownerDid = host.selfDid();
       // One party per person per room: starting a new one disbands the
@@ -84,6 +82,12 @@ export default definePlugin({
         }
         console.warn("[anime-party] search failed", err);
         await host.sendCard({ query, results: [], ownerDid });
+        // The card shows no results either way; only the searcher needs to
+        // know these are missing because the search broke, not because
+        // nothing matched. Hosts before the error note do without.
+        if (typeof host.showError === "function") {
+          host.showError("The anidb.app search failed, so the party has no results yet. Try again in a moment, or paste the show's link.");
+        }
       }
     },
   },
