@@ -136,6 +136,8 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   let syncedRequestId = "";
   let pending = $state<string | null>(null);
   let playerLoading = $state(true);
+  /** The player wants a click inside the video; our controls step aside. */
+  let playerNeedsClick = $state(false);
   // Re-read on reconnect below, so it stays $state - it just must not
   // capture host reactively here.
   let selfDid = $state(untrack(() => host.selfDid()));
@@ -929,6 +931,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
             onReady={() => (playerLoading = false)}
             onPlayable={() => (playerLoading = false)}
             onError={() => (playerLoading = false)}
+            onNeedsClick={(on) => (playerNeedsClick = on)}
           />
           <!-- The same synced chrome the call tile renders: center
                play/pause, transport bar, vignette - revealed on hover. -->
@@ -937,7 +940,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
             position={localPosition}
             duration={rendererDuration}
             {lang}
-            visible={playerHover}
+            visible={playerHover && !playerNeedsClick}
             vignetteBoost
             queueLabel={anime.currentIndex !== null
               ? `${anime.currentIndex + 1}/${anime.queue.length}`

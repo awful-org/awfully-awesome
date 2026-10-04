@@ -206,6 +206,11 @@
     onReady?: () => void;
     onPlayable?: () => void;
     onError?: (message: string) => void;
+    /** The player is asking for a click INSIDE the video (to give the sound
+     *  back, or to start a player the host will not let start itself). The
+     *  surface should get its own controls out of the way meanwhile, or the
+     *  click lands on them instead. */
+    onNeedsClick?: (on: boolean) => void;
   }
   let {
     showId,
@@ -219,6 +224,7 @@
     onReady,
     onPlayable,
     onError,
+    onNeedsClick,
   }: Props = $props();
 
   const src = $derived(
@@ -253,6 +259,7 @@
   /** When the party first asked this embed to play without it moving. */
   let askingSince = 0;
   const passThrough = $derived(needsSound || needsGesture);
+  $effect(() => onNeedsClick?.(passThrough));
   let reportedOnce = false;
   /** The playhead to restore after a reload of the SAME episode (a sub/dub
    *  switch): the new page starts at zero, the party did not. */

@@ -110,14 +110,12 @@ PLUGIN_SOURCES=awful-org/awfully-awesome#<tag-or-sha>
 No proxy hosts, no secrets, no relay lane: AniList answers browsers
 directly, and the video loads inside the embed. Three things on the host:
 
-- The page's **Permissions-Policy must delegate `autoplay` (and
-  `fullscreen`) to `https://zokoanime.video`**, the way awful.chat's
-  `frontend/nginx.conf` already does for YouTube:
-
-  ```text
-  autoplay=(self "https://www.youtube.com" "https://zokoanime.video"),
-  fullscreen=(self "https://www.youtube.com" "https://zokoanime.video")
-  ```
+- The page's **Permissions-Policy must let the embed autoplay** (and go
+  fullscreen). awful.chat's `frontend/nginx.conf` does this for any frame
+  that asks, with `autoplay=*, fullscreen=*`; the player's iframe asks with
+  `allow="autoplay; fullscreen"`. An instance on an older policy that names
+  only YouTube needs `https://zokoanime.video` added to both, or that newer
+  policy.
 
   Without it the browser refuses every play the party sends the embed,
   silently: the episode sits on its first frame. The player notices after a

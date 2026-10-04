@@ -143,6 +143,8 @@
       ) ?? anime.position;
   });
   let playerLoading = $state(true);
+  /** The player wants a click inside the video; our controls step aside. */
+  let playerNeedsClick = $state(false);
   let activeResyncId = $state<string | null>(null);
   // Consume a parked card position only once when this renderer takes over.
   // Keeping peekHandoff() in the player prop would pin the element to the
@@ -497,6 +499,7 @@
         onReady={() => (playerLoading = false)}
         onPlayable={() => (playerLoading = false)}
         onError={() => (playerLoading = false)}
+        onNeedsClick={(on) => (playerNeedsClick = on)}
         onEnded={ended}
       />
     </div>
@@ -513,7 +516,7 @@
       position={localPosition}
       {duration}
       {lang}
-      visible={chromeVisible}
+      visible={chromeVisible && !playerNeedsClick}
       queueLabel={anime.currentIndex !== null
         ? `${anime.currentIndex + 1}/${anime.queue.length}`
         : ""}
