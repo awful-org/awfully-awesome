@@ -3,8 +3,10 @@ import { render } from "svelte/server";
 import ResumeOverlay from "./ResumeOverlay.svelte";
 import {
   createAutoplayResumeController,
+  nextReport,
   projectedReport,
   readPlayerEvent,
+  statedReport,
 } from "./AnimePlayer.svelte";
 
 const ORIGIN = "https://zokoanime.video";
@@ -104,6 +106,48 @@ describe("projectedReport", () => {
 
   it("never projects past the end of the episode", () => {
     expect(projectedReport({ position: 1438, at: 0, paused: false }, 10_000, 1440)).toBe(1440);
+  });
+});
+
+describe("nextReport", () => {
+  it("keeps a paused embed paused through the time events a seek sends", () => {
+    // What the embed really sends after a pause that comes with a seek: the
+    // pause, then "time" at the seek target - sometimes before the "seeked",
+    // sometimes after - all at the very same position. The projection used
+    // to take each as playback and ran on through the pause.
+    for (const order of [
+      ["time", "seeked", "time", "time"],
+      ["seeked", "time", "time", "time"],
+    ] as const) {
+      let report = statedReport(10.52, true, 1_000);
+      let at = 1_000;
+      for (const type of order) report = nextReport(report, type, 10.428, (at += 100));
+      expect(report.paused).toBe(true);
+      expect(projectedReport(report, 9_000, 0)).toBe(10.428);
+    }
+  });
+
+  it("calls the embed playing once consecutive time reports move forward", () => {
+    let report = statedReport(10, true, 0);
+    report = nextReport(report, "time", 10, 100);
+    expect(report.paused).toBe(true);
+    report = nextReport(report, "time", 10.25, 350);
+    expect(report.paused).toBe(false);
+  });
+
+  it("does not read a jump as playback", () => {
+    // A seek target landing after the last tick is not a tick.
+    let report = nextReport(statedReport(10, true, 0), "time", 10, 100);
+    report = nextReport(report, "time", 300, 200);
+    expect(report.paused).toBe(true);
+  });
+
+  it("keeps a playing embed playing, and lets a seek move it without a verdict", () => {
+    let report = nextReport(statedReport(10, false, 0), "time", 10, 100);
+    expect(report.paused).toBe(false);
+    report = nextReport(report, "seeked", 300, 200);
+    expect(report).toEqual({ position: 300, at: 200, paused: false, lastTime: null });
+    expect(nextReport(null, "seeked", 300, 0).paused).toBe(true);
   });
 });
 

@@ -59,6 +59,51 @@
     return duration > 0 ? Math.min(at, duration) : at;
   }
 
+  export interface EmbedReport {
+    position: number;
+    at: number;
+    paused: boolean;
+    /** The last "time" position since anything else was heard, or null. */
+    lastTime: number | null;
+  }
+
+  /**
+   * What a "time" or "seeked" event says about the embed. A "time" event is
+   * NOT proof of playback: the embed sends a few of them around a seek made
+   * while paused, all at the seek target, and not always after the
+   * "seeked". Taking each one as "playing" made the projected position run
+   * on through a pause - the seek bar kept counting, and the next play sent
+   * that inflated position to the whole party.
+   *
+   * So the embed is playing when two "time" reports in a row move forward
+   * by a plausible tick, and otherwise is whatever the last play, pause or
+   * state said. Any other event breaks the run: a "seeked" moves the
+   * playhead without saying anything about playback either way.
+   */
+  export function nextReport(
+    prev: EmbedReport | null,
+    type: "time" | "seeked",
+    position: number,
+    now: number
+  ): EmbedReport {
+    const was = prev?.paused ?? true;
+    if (type === "seeked")
+      return { position, at: now, paused: was, lastTime: null };
+    const last = prev?.lastTime ?? null;
+    const moving = last !== null && position > last && position - last < 2;
+    return { position, at: now, paused: moving ? false : was, lastTime: position };
+  }
+
+  /** A report from an event that names playback outright (play, pause,
+   *  state, ready): it starts a fresh run of "time" reports. */
+  export function statedReport(
+    position: number,
+    paused: boolean,
+    now: number
+  ): EmbedReport {
+    return { position, at: now, paused, lastTime: null };
+  }
+
   interface AutoplayResumeOptions {
     isPlaying: () => boolean;
     setNeedsClick: (value: boolean) => void;
@@ -180,7 +225,7 @@
   let disposed = false;
   let duration = 0;
   /** The embed's last word on where it is, and when that was true here. */
-  let report: { position: number; at: number; paused: boolean } | null = null;
+  let report: EmbedReport | null = null;
   let needsResumeClick = $state(false);
   /** The embed is playing without sound because the browser refused it
    *  any. Only a click INSIDE the iframe can give the sound back, so while
@@ -227,7 +272,7 @@
     // Taken as true straight away: the "seeked" confirmation is a round trip
     // off, and a drift check in between would see the old position and ask
     // for the same seek again.
-    report = { position: at, at: Date.now(), paused: report?.paused ?? true };
+    report = statedReport(at, report?.paused ?? true, Date.now());
   }
 
   export function currentTime(): number {
@@ -264,6 +309,20 @@
     }
   }
 
+  let lastHoldAt = 0;
+  /**
+   * The party is paused but the embed's position is moving, with no "play"
+   * event to say so. The "play" handler covers the case it reports; this
+   * covers the one it does not. Throttled, because "time" arrives several
+   * times a second until the pause lands.
+   */
+  function holdPaused(): void {
+    if (playing || !report || report.paused) return;
+    if (Date.now() - lastHoldAt < 400) return;
+    lastHoldAt = Date.now();
+    command({ type: "pause" });
+  }
+
   function noteDuration(value: number | undefined): void {
     if (value === undefined || value <= 0 || value === duration) return;
     duration = value;
@@ -287,11 +346,7 @@
         clearReadyTimer();
         ready = true;
         error = "";
-        report = {
-          position: message.position ?? 0,
-          at: Date.now(),
-          paused: message.paused ?? true,
-        };
+        report = statedReport(message.position ?? 0, message.paused ?? true, Date.now());
         console.info("[anime-party] player ready", { src, position, playing });
         if (carry) {
           // A sub/dub switch: land where the party is now, not where the
@@ -307,15 +362,12 @@
       case "time":
       case "seeked":
         if (message.position !== undefined)
-          report = {
-            position: message.position,
-            at: Date.now(),
-            paused: message.type === "seeked" ? (report?.paused ?? true) : false,
-          };
-        if (message.type === "time") onPlayable?.();
+          report = nextReport(report, message.type, message.position, Date.now());
+        if (message.type === "time" && report && !report.paused) onPlayable?.();
+        holdPaused();
         break;
       case "play":
-        report = { position: currentTime(), at: Date.now(), paused: false };
+        report = statedReport(currentTime(), false, Date.now());
         onPlayable?.();
         autoplayResume.onPlaying();
         // Started under a paused party: the click that gave the sound back
@@ -324,7 +376,7 @@
         else command({ type: "state" });
         break;
       case "pause":
-        report = { position: currentTime(), at: Date.now(), paused: true };
+        report = statedReport(currentTime(), true, Date.now());
         // The embed paused on its own: a stall, a click inside it, an unmute.
         // The party state is authoritative, so ask once for playback back and
         // let the watchdog raise the overlay if the answer is no. One attempt
@@ -338,14 +390,10 @@
         break;
       case "state":
         if (message.position !== undefined && message.paused !== undefined)
-          report = {
-            position: message.position,
-            at: Date.now(),
-            paused: message.paused,
-          };
+          report = statedReport(message.position, message.paused, Date.now());
         break;
       case "ended":
-        report = { position: duration || currentTime(), at: Date.now(), paused: true };
+        report = statedReport(duration || currentTime(), true, Date.now());
         onEnded?.();
         break;
       case "error":
