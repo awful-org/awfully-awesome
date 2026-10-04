@@ -107,11 +107,27 @@ PLUGIN_SOURCES=awful-org/awfully-awesome#<tag-or-sha>
 
 ## Requirements
 
-Nothing on the instance: no proxy hosts, no secrets, no relay lane. AniList
-answers browsers directly, and the video loads inside the embed. The host
-build must ship `clock-sample` (an older one refuses to load the plugin and
-says so), and the page's Content-Security-Policy must allow `https:` frames,
-which awful.chat's default does.
+No proxy hosts, no secrets, no relay lane: AniList answers browsers
+directly, and the video loads inside the embed. Three things on the host:
+
+- The page's **Permissions-Policy must delegate `autoplay` (and
+  `fullscreen`) to `https://zokoanime.video`**, the way awful.chat's
+  `frontend/nginx.conf` already does for YouTube:
+
+  ```text
+  autoplay=(self "https://www.youtube.com" "https://zokoanime.video"),
+  fullscreen=(self "https://www.youtube.com" "https://zokoanime.video")
+  ```
+
+  Without it the browser refuses every play the party sends the embed,
+  silently: the episode sits on its first frame. The player notices after a
+  few seconds and asks each viewer to click the video, which starts it (a
+  click inside the player is allowed where autoplay is not), but that click
+  is needed again for every episode, by every viewer.
+- The page's Content-Security-Policy must allow `https:` frames, which
+  awful.chat's default does.
+- The host build must ship `clock-sample`; an older one refuses to load the
+  plugin and says so.
 
 ## Privacy
 

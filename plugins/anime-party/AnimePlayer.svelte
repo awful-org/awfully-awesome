@@ -245,6 +245,14 @@
    *  any. Only a click INSIDE the iframe can give the sound back, so while
    *  this holds the shield steps aside and the picture takes the click. */
   let needsSound = $state(false);
+  /** The episode is loaded but every play is refused without a word: the
+   *  instance's Permissions-Policy does not delegate autoplay to the embed
+   *  (see README, Requirements). A click INSIDE the iframe is still allowed
+   *  to start it, so the shield steps aside for that click too. */
+  let needsGesture = $state(false);
+  /** When the party first asked this embed to play without it moving. */
+  let askingSince = 0;
+  const passThrough = $derived(needsSound || needsGesture);
   let reportedOnce = false;
   /** The playhead to restore after a reload of the SAME episode (a sub/dub
    *  switch): the new page starts at zero, the party did not. */
@@ -391,6 +399,7 @@
         if (message.type === "time" && report && !report.paused) {
           onPlayable?.();
           asserter.moved();
+          needsGesture = false;
         }
         holdPaused();
         break;
@@ -398,6 +407,7 @@
         report = statedReport(currentTime(), false, Date.now());
         onPlayable?.();
         asserter.moved();
+        needsGesture = false;
         // Started under a paused party: the click that gave the sound back
         // also toggled the embed's own playback. The party wins.
         if (!playing) command({ type: "pause" });
@@ -442,6 +452,8 @@
     duration = 0;
     error = "";
     needsSound = false;
+    needsGesture = false;
+    askingSince = 0;
     reloads = 0;
     notice = "";
     asserter.reset();
@@ -471,7 +483,21 @@
   /** The party is playing: has the embed been sitting without media for
    *  longer than the current retry allows? */
   function checkStuck(): void {
-    if (!ready || mediaReady || disposed || error) return;
+    if (!ready || disposed || error) return;
+    // Asked to play every two seconds for a while and still not moving.
+    // The embed's player refuses a play without reporting it (no "pause"
+    // for a play that never started), which is what a host policy that
+    // blocks the embed's autoplay looks like - and then it never loads the
+    // episode either. A click inside the player starts it whatever the
+    // cause, so offer that after a few seconds; the reloads below still run
+    // for a video host that is merely slow.
+    if (moving()) askingSince = 0;
+    else if (!askingSince) askingSince = Date.now();
+    else if (!needsGesture && Date.now() - askingSince > 6_000) {
+      needsGesture = true;
+      console.warn("[anime-party] the embed has not started; asking for a click on the video");
+    }
+    if (mediaReady) return;
     const waited = Date.now() - readyAt;
     const wait = stuckRetryDelay(reloads);
     if (wait !== null) {
@@ -513,6 +539,8 @@
     if (!playing) {
       asserter.reset();
       needsSound = false;
+      needsGesture = false;
+      askingSince = 0;
     }
   });
 
@@ -581,11 +609,11 @@
         title="Anime player"
         allow="autoplay; fullscreen"
         class="block aspect-video min-h-[200px] w-full min-w-[200px] overflow-hidden rounded-md border border-border bg-black"
-        class:pointer-events-auto={needsSound}
+        class:pointer-events-auto={passThrough}
       ></iframe>
     {/key}
   {/if}
-  {#if !needsSound}
+  {#if !passThrough}
     <!-- The embed's own controls move only this viewer. This inert shield
          takes the pointer so the party's synced controls, drawn above, are
          the only ones that act. -->
@@ -595,7 +623,9 @@
       class="pointer-events-none absolute left-1/2 top-3 z-30 w-fit max-w-[90%] -translate-x-1/2 rounded bg-black/80 px-2 py-1 text-center font-mono text-[11px] text-white"
       role="status"
     >
-      Your browser started this muted. Click the video to turn the sound on.
+      {needsGesture
+        ? "Click the video to start it. This instance does not let the player start on its own."
+        : "Your browser started this muted. Click the video to turn the sound on."}
     </p>
   {/if}
   {#if notice && !error}
