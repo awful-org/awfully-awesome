@@ -7,7 +7,7 @@
   import { Tip } from "$lib/plugins/ui";
   import { livePosition } from "./tile-presence.svelte";
   import { episodeLabel } from "./titles";
-  import { episodes as fetchEpisodes, type Episode } from "./anidb";
+  import { episodes as fetchEpisodes, type Episode } from "./anilist";
 
   interface Props {
     card: Message;
@@ -31,7 +31,7 @@
   // just the queue. Same cached, deduped episodes() call the card uses; the
   // strip only mounts it while a show is actually playing.
   let episodeList = $state<Episode[]>([]);
-  let episodesLoadedFor = "";
+  let episodesLoadedFor: number | null = null;
   $effect(() => {
     const showId = anime.show?.id;
     if (!showId || !current || showId === episodesLoadedFor) return;
@@ -98,18 +98,14 @@
   async function goNext() {
     const n = nextEpisode();
     if (n)
-      await send({
-        action: "step",
-        episode: { id: n.id, number: n.number },
-        at: "end",
-      });
+      await send({ action: "step", episode: { number: n.number }, at: "end" });
   }
   async function previous() {
     const p = prevEpisode();
     if (p)
       await send({
         action: "step",
-        episode: { id: p.id, number: p.number },
+        episode: { number: p.number },
         at: "start",
       });
   }

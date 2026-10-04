@@ -18,13 +18,11 @@ import {
  * correction would ADD desync - wait for samples); or the players disagree
  * about paused, which the surfaces' own play/pause assertion owns.
  *
- * Unlike waffle-party's, this returns the WHOLE correction. There the player
- * was a YouTube iframe, which rounds fractional playback rates to its own
- * discrete steps, so Syncplay's rate-nudge lane did not exist and "rate"
- * collapsed to null. A native <video> honours playbackRate exactly, so the
- * middle band is real: a 5% speed change closes a second or two of drift
- * without the audible, visible jump a seek costs. The surfaces apply it -
- * "seek" seeks, "rate" nudges, "none" restores rate 1.
+ * This returns the WHOLE correction, rate lane included, and leaves the
+ * choice to the surfaces. Today they act on "seek" alone: the player is the
+ * zokoanime embed, which takes no playback rate over its message API, so a
+ * "rate" answer is as good as "none" there - the same position waffle-party
+ * is in with the YouTube iframe.
  */
 export function driftCorrection(
   tick: WatchTick | null,

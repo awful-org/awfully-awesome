@@ -3,7 +3,7 @@ import { manifest } from "./manifest";
 import AnimeCard from "./AnimeCard.svelte";
 import AnimeCallTile from "./AnimeCallTile.svelte";
 import AnimeWidget from "./AnimeWidget.svelte";
-import { NotConfiguredError, search, showIdFromUrl } from "./anidb";
+import { search, showById, showIdFromUrl } from "./anilist";
 import { initialState, QUERY_CAP, reduce, type AnimeState } from "./logic";
 
 export default definePlugin({
@@ -35,7 +35,7 @@ export default definePlugin({
       const typed = args.trim();
       if (!typed) {
         // Thrown, so the host says it to the person who typed it.
-        throw new Error("Search for a show, or paste its anidb.app link: /anime frieren");
+        throw new Error("Search for a show, or paste its MyAnimeList link: /anime frieren");
       }
       const ownerDid = host.selfDid();
       // One party per person per room: starting a new one disbands the
@@ -48,12 +48,18 @@ export default definePlugin({
           .map((card) => host.sendUpdate(card.id, { action: "close" }))
       );
 
-      // A pasted show URL skips search entirely. The title is the slug for
-      // now; the card wave can resolve a nicer one.
+      // A pasted show URL skips search entirely. The url carries only the
+      // id, so the title and cover come from one AniList lookup; if that
+      // fails the party still starts, named by the id rather than not at all.
       const showId = showIdFromUrl(typed);
       if (showId) {
+        const show = await showById(showId).catch(() => null);
         await host.sendCard({
-          show: { id: showId, title: showId, image: null },
+          show: show ?? {
+            id: showId,
+            title: `MyAnimeList #${showId}`,
+            image: null,
+          },
           ownerDid,
         });
         return;
@@ -69,24 +75,15 @@ export default definePlugin({
         const results = await search(query);
         await host.sendCard({ query, results, ownerDid });
       } catch (err) {
-        if (err instanceof NotConfiguredError) {
-          // Not a failure to retry: the instance did not allowlist
-          // anidb.app, and the card is where a user can read that.
-          await host.sendCard({
-            query,
-            results: [],
-            notConfigured: true,
-            ownerDid,
-          });
-          return;
-        }
+        // The card still goes out, with no results: its own search box is
+        // where the party retries.
         console.warn("[anime-party] search failed", err);
         await host.sendCard({ query, results: [], ownerDid });
         // The card shows no results either way; only the searcher needs to
         // know these are missing because the search broke, not because
         // nothing matched. Hosts before the error note do without.
         if (typeof host.showError === "function") {
-          host.showError("The anidb.app search failed, so the party has no results yet. Try again in a moment, or paste the show's link.");
+          host.showError("The AniList search failed, so the party has no results yet. Try again in a moment, or paste the show's MyAnimeList link.");
         }
       }
     },

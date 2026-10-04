@@ -8,7 +8,7 @@
  * widget and the lock screen all read it from this helper instead of each
  * formatting it slightly differently.
  */
-import type { Episode, Show } from "./anidb";
+import type { Episode, Show } from "./anilist";
 
 export function episodeLabel(
   show: Pick<Show, "title"> | null,

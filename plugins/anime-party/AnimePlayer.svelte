@@ -1,81 +1,88 @@
 <script module lang="ts">
-  import { streamUrl } from "$lib/plugins/api";
+  import { PLAYER_ORIGIN } from "./anilist";
 
-  /**
-   * Where hls.js must actually send a request.
-   *
-   * hls.anidb.app pins CORS to its own origin, so nothing the page fetches
-   * from it can be read: the master playlist, every variant playlist and
-   * every segment ride the instance's streaming relay instead. Called per
-   * request rather than hoisted, because the api origin is read from
-   * /config.json after load and there is nothing to inline.
-   *
-   * Anything that is not the provider's stream host throws instead of being
-   * proxied. hls.js answers a throwing xhrSetup by opening the request
-   * plainly against the original url, which fails loudly on CORS - much
-   * better than the relay being asked to fetch a hostname somebody else
-   * chose, including its own.
-   */
-  const STREAM_HOST_PREFIX = "https://hls.anidb.app/";
-
-  export function proxiedLoaderUrl(url: string): string {
-    if (!url.startsWith(STREAM_HOST_PREFIX))
-      throw new Error(`refusing to proxy ${url}`);
-    return streamUrl(url);
+  /** What the embed tells the page, narrowed to the fields the party reads.
+   *  See zokoanime.video/docs, "Player Events". */
+  export interface PlayerEvent {
+    type: string;
+    position?: number;
+    duration?: number;
+    paused?: boolean;
+    muted?: boolean;
   }
 
-  /** The slice of a media element the autoplay controller touches. */
-  export interface AutoplayResumeVideo {
-    paused: boolean;
-    ended: boolean;
-    muted: boolean;
-    volume: number;
-    play(): Promise<void>;
+  function finiteNonNegative(v: unknown): number | undefined {
+    return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : undefined;
   }
 
   /**
-   * Is this element actually moving? There is no YouTube state number here:
-   * a media element is playing when it is neither paused nor finished.
-   * `play()` resolving is not the same fact - it resolves for a muted
-   * element the policy then stalls.
+   * A postMessage, if it is the embed speaking, else null.
+   *
+   * The origin is checked as well as the channel: any frame on the page can
+   * post `{ channel: "zokoanime" }`, and a forged "ended" would skip the
+   * party's episode for everybody. The caller also checks that the message
+   * came from its OWN iframe, so the card's and the tile's players never
+   * answer each other's events.
    */
-  function errName(err: unknown): string {
-    return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+  export function readPlayerEvent(event: {
+    origin: string;
+    data: unknown;
+  }): PlayerEvent | null {
+    if (event.origin !== PLAYER_ORIGIN) return null;
+    const data = event.data as Record<string, unknown> | null;
+    if (!data || typeof data !== "object") return null;
+    if (data.channel !== "zokoanime" || typeof data.type !== "string")
+      return null;
+    return {
+      type: data.type,
+      position: finiteNonNegative(data.position),
+      duration: finiteNonNegative(data.duration),
+      paused: typeof data.paused === "boolean" ? data.paused : undefined,
+      muted: typeof data.muted === "boolean" ? data.muted : undefined,
+    };
   }
 
-  export function videoIsPlaying(video: AutoplayResumeVideo | null): boolean {
-    return !!video && !video.paused && !video.ended;
-  }
-
-  /** 0..100 party-local preference to the element's own 0..1 scale. */
-  export function elementVolume(value: number): number {
-    if (!Number.isFinite(value)) return 1;
-    return Math.min(1, Math.max(0, value / 100));
+  /**
+   * Where the embed's playhead is now, from its last report. The embed
+   * reports a few times a second while playing, but a postMessage reply is
+   * never instant, so a reading between reports is projected forward rather
+   * than handed out stale - the drift law would otherwise see a few hundred
+   * milliseconds of drift that is not there.
+   */
+  export function projectedReport(
+    report: { position: number; at: number; paused: boolean },
+    now: number,
+    duration: number
+  ): number {
+    const elapsed = report.paused ? 0 : Math.max(0, now - report.at) / 1_000;
+    const at = report.position + elapsed;
+    return duration > 0 ? Math.min(at, duration) : at;
   }
 
   interface AutoplayResumeOptions {
     isPlaying: () => boolean;
-    /** The viewer's volume preference, 0..100. */
-    volume: () => number;
     setNeedsClick: (value: boolean) => void;
     setTimer: (callback: () => void, delay: number) => number;
     clearTimer: (timer: number) => void;
   }
 
+  /** The slice of the embed the autoplay controller touches. */
+  export interface AutoplayResumePlayer {
+    isPlaying(): boolean;
+    play(): void;
+  }
+
   /**
-   * The autoplay policy, handled the way waffle-party handles it, against a
-   * media element instead of the YouTube iframe.
+   * The autoplay policy, handled the way waffle-party handles it, against
+   * the embed instead of the YouTube iframe.
    *
-   * The shape is the same because the problem is: after a refresh the
-   * browser refuses an unmuted play, and a party that says "playing" must
-   * not sit silently on a still frame. So play optimistically, fall back to
-   * a MUTED play (which the policy does permit), restore the sound the
-   * moment playback is real, and if even the muted attempt is refused put a
-   * click target on the picture - one gesture unmutes and plays.
-   *
-   * The watchdog exists because no event fires for "the policy quietly
-   * declined": a second after asking for playback, either the element is
-   * moving or the overlay goes up.
+   * The embed already does the first half itself: refused an unmuted play,
+   * it plays muted and says so in its state. What it cannot do is play at
+   * all when even that is refused, and no event fires for "the policy
+   * quietly declined" - so a moment after asking for playback, either the
+   * embed has reported it is moving or a click target goes up on the
+   * picture. That click is a gesture on THIS page, which the iframe's
+   * allow="autoplay" lets the embed use for its next play.
    */
   export function createAutoplayResumeController(
     options: AutoplayResumeOptions
@@ -87,62 +94,25 @@
       timer = null;
     }
 
-    function restoreAudio(video: AutoplayResumeVideo) {
-      video.muted = false;
-      video.volume = elementVolume(options.volume());
-    }
-
-    function schedule(video: AutoplayResumeVideo) {
+    function schedule(player: AutoplayResumePlayer) {
       clear();
       timer = options.setTimer(() => {
         timer = null;
-        if (options.isPlaying() && !videoIsPlaying(video))
+        if (options.isPlaying() && !player.isPlaying())
           options.setNeedsClick(true);
-      }, 1_000);
+      }, 2_000);
     }
 
     return {
-      playerIsPlaying: videoIsPlaying,
-      /** Ask for playback, muting only as far as the policy forces. */
-      async attempt(video: AutoplayResumeVideo) {
-        clear();
-        try {
-          await video.play();
-        } catch (err) {
-          // NotAllowedError. A muted play is permitted where an unmuted one
-          // is not, so take it and let onPlaying give the sound back.
-          console.warn("[anime-party] play refused, retrying muted:", errName(err));
-          video.muted = true;
-          try {
-            await video.play();
-          } catch (err2) {
-            console.warn("[anime-party] muted play refused too:", errName(err2));
-            options.setNeedsClick(true);
-            return;
-          }
-        }
-        if (options.isPlaying()) schedule(video);
-      },
       schedule,
-      onPlaying(video: AutoplayResumeVideo) {
+      onPlaying() {
         clear();
         options.setNeedsClick(false);
-        restoreAudio(video);
-        // Unmuting a muted autoplay can itself PAUSE playback in some
-        // browsers - and this is the last watchdog standing, so the party
-        // would die silently with no resume overlay. Re-arm it: if playback
-        // survives the unmute the check passes, if not the overlay shows.
-        schedule(video);
       },
-      resume(video: AutoplayResumeVideo) {
+      resume(player: AutoplayResumePlayer) {
         options.setNeedsClick(false);
-        clear();
-        restoreAudio(video);
-        void video.play().catch((err) => {
-          console.warn("[anime-party] resume refused:", errName(err));
-          options.setNeedsClick(true);
-        });
-        schedule(video);
+        player.play();
+        schedule(player);
       },
       pause() {
         clear();
@@ -158,69 +128,91 @@
 
 <script lang="ts">
   import { onMount } from "svelte";
-  import Hls from "hls.js";
   import ResumeOverlay from "./ResumeOverlay.svelte";
-  import { masterUrl, UpstreamDownError, type Lang } from "./anidb";
+  import { embedUrl, type Lang } from "./anilist";
 
   interface Props {
-    episodeId: number | null;
+    /** The show's MyAnimeList id. */
+    showId: number | null;
+    episode: number | null;
     /**
      * The audio language THIS viewer asked for. Local: sub and dub are two
-     * different files upstream, so changing it re-resolves and reloads only
-     * this element, and nothing about it reaches the room.
+     * different embed pages, so changing it reloads only this iframe, and
+     * nothing about it reaches the room.
      */
     lang: Lang;
-    hidden?: boolean;
     playing: boolean;
     position: number;
-    volume?: number;
     onPosition?: (position: number) => void;
     onDuration?: (duration: number) => void;
     onEnded?: () => void;
     onReady?: () => void;
     onPlayable?: () => void;
     onError?: (message: string) => void;
-    /** What actually played, which is not always what was asked for: an
-     *  episode can exist in one audio language only. */
-    onResolvedLang?: (lang: Lang) => void;
   }
   let {
-    episodeId,
+    showId,
+    episode,
     lang,
-    hidden = false,
     playing,
     position,
-    volume = 100,
     onPosition,
     onDuration,
     onEnded,
     onReady,
     onPlayable,
     onError,
-    onResolvedLang,
   }: Props = $props();
 
-  let video = $state<HTMLVideoElement | null>(null);
-  let hls: Hls | null = null;
+  const src = $derived(
+    showId !== null && episode !== null ? embedUrl(showId, episode, lang) : ""
+  );
+
+  let frame = $state<HTMLIFrameElement | null>(null);
   let error = $state("");
-  let last = "";
-  /** `${episodeId}:${lang}` currently being resolved; a late answer for an
-   *  older key is dropped rather than attached over the newer one. */
-  let requestedKey = "";
-  /** A source is attached and sync() may act on the element. */
+  /** The embed said "ready" for the current src; commands may be sent. */
   let ready = false;
-  /** Where the element should be as soon as it can seek at all. */
-  let pendingSeek: number | null = null;
+  /** The episode's media is loaded (the embed knows its duration). The page
+   *  says "ready" long before that, and a cold episode can take half a
+   *  minute more, so this - not "ready" - is what onReady reports. */
+  let mediaReady = false;
+  let last = "";
   let disposed = false;
+  let duration = 0;
+  /** The embed's last word on where it is, and when that was true here. */
+  let report: { position: number; at: number; paused: boolean } | null = null;
   let needsResumeClick = $state(false);
+  /** The embed is playing without sound because the browser refused it
+   *  any. Only a click INSIDE the iframe can give the sound back, so while
+   *  this holds the shield steps aside and the picture takes the click. */
+  let needsSound = $state(false);
   let reportedOnce = false;
+  /** The playhead to restore after a reload of the SAME episode (a sub/dub
+   *  switch): the new page starts at zero, the party did not. */
+  let carry: { position: number; at: number } | null = null;
+  let loadedSrc = "";
+  /** Show and episode of loadedSrc, whatever its language. */
+  let loadedEpisode = "";
+  let readyTimer: number | null = null;
+
   const autoplayResume = createAutoplayResumeController({
     isPlaying: () => playing,
-    volume: () => volume,
     setNeedsClick: (value) => (needsResumeClick = value),
     setTimer: (callback, delay) => window.setTimeout(callback, delay),
     clearTimer: (timer) => window.clearTimeout(timer),
   });
+  const embed: AutoplayResumePlayer = {
+    isPlaying: () => !!report && !report.paused,
+    play: () => command({ type: "play" }),
+  };
+
+  function command(message: Record<string, unknown>): void {
+    if (!ready) return;
+    frame?.contentWindow?.postMessage(
+      { channel: "zokoanime", ...message },
+      PLAYER_ORIGIN
+    );
+  }
 
   /**
    * Local-only alignment seek (watch-sync drift correction). Deliberately
@@ -229,320 +221,261 @@
    * fights this.
    */
   export function seekLocal(target: number): void {
-    if (!video || !ready) return;
+    if (!ready) return;
     const at = Math.max(0, target);
-    // A freshly attached element has no media source to seek IN yet, and
-    // the assignment either throws or is silently dropped. The party's
-    // position would then be lost for good, because the props tuple has
-    // already been recorded as applied - so park it for loadedmetadata.
-    if (video.readyState === 0) {
-      pendingSeek = at;
-      return;
-    }
-    try {
-      video.currentTime = at;
-      pendingSeek = null;
-    } catch {
-      pendingSeek = at;
-    }
-  }
-
-  /** The media element, for the host's picture-in-picture surfaces. */
-  export function element(): HTMLVideoElement | null {
-    return video;
+    command({ type: "seek", time: at });
+    // Taken as true straight away: the "seeked" confirmation is a round trip
+    // off, and a drift check in between would see the old position and ask
+    // for the same seek again.
+    report = { position: at, at: Date.now(), paused: report?.paused ?? true };
   }
 
   export function currentTime(): number {
-    const current = video?.currentTime;
-    return typeof current === "number" && Number.isFinite(current)
-      ? current
-      : position;
+    return report ? projectedReport(report, Date.now(), duration) : position;
   }
 
-  /**
-   * The rate lane of the watch library's control law, which waffle-party
-   * could not use: the YouTube iframe rounds fractional rates to its own
-   * discrete steps, a media element honours them exactly. A 5% nudge closes
-   * a second of drift without the jump a seek costs.
-   */
-  export function setRate(rate: number): void {
-    if (!video || !Number.isFinite(rate) || rate <= 0) return;
-    if (video.playbackRate !== rate) video.playbackRate = rate;
-  }
-
-  function fail(key: string, message: string): void {
-    if (disposed || key !== requestedKey) return;
+  function fail(message: string): void {
+    if (disposed) return;
     error = message;
     onError?.(message);
   }
 
-  function teardown(): void {
-    hls?.destroy();
-    hls = null;
-    ready = false;
-    last = "";
-    pendingSeek = null;
-    if (!video) return;
-    video.removeAttribute("src");
-    // Without the reload the element keeps the old buffer (and keeps
-    // decoding it) after the episode changed.
-    video.load();
-  }
-
-  /** anidb.app itself is not answering; say so rather than "could not load". */
-  function downMessage(status: number): string {
-    return `anidb.app is probably down${status ? ` (it answered ${status})` : ""}. Nothing here is broken; try again in a few minutes.`;
-  }
-
-  async function load(key: string, id: number | null, want: Lang) {
-    teardown();
-    requestedKey = key;
-    error = "";
-    if (id === null) return;
-    let resolved: Awaited<ReturnType<typeof masterUrl>>;
-    try {
-      resolved = await masterUrl(id, want);
-    } catch (err) {
-      fail(
-        key,
-        err instanceof UpstreamDownError
-          ? downMessage(err.status)
-          : "Could not load the stream."
-      );
-      return;
-    }
-    if (disposed || key !== requestedKey) return;
-    if (!resolved) {
-      fail(key, "No stream found for this episode.");
-      return;
-    }
-    onResolvedLang?.(resolved.lang);
-    attach(key, resolved.url);
-  }
-
-  function attach(key: string, master: string): void {
-    if (!video) return;
-    if (Hls.isSupported()) {
-      hls = new Hls({
-        enableWorker: true,
-        // Start at the lowest quality: anidb.app throttles a cache-cold
-        // segment to ~5 KB/s, so the smallest segments are the only ones
-        // that arrive fast enough to begin. ABR climbs on its own once the
-        // segments are warm (Cloudflare caches them after the first pull).
-        startLevel: 0,
-        // Buffering is capped well under the stock 60 MB: the relay proxies
-        // every segment and rate-limits per client, and with the defaults
-        // hls.js pulled 94 segments in 25 seconds filling that buffer as
-        // fast as the link allowed, which brushes the ceiling.
-        maxBufferLength: 60,
-        maxMaxBufferLength: 120,
-        maxBufferSize: 20 * 1000 * 1000,
-        backBufferLength: 30,
-        // The relay is the only way these bytes reach the page. hls.js opens
-        // the request itself ONLY when xhrSetup did not (see its XhrLoader),
-        // so opening it here redirects the master, every variant playlist
-        // and every segment. The provider's playlists carry absolute urls,
-        // so hls.js never resolves a segment against the proxied url.
-        xhrSetup(xhr: XMLHttpRequest, url: string) {
-          xhr.open("GET", proxiedLoaderUrl(url), true);
-        },
-      });
-      // A fatal error is not the end: a cache-cold segment on anidb.app's
-      // ~5 KB/s origin times out or arrives truncated, hls.js escalates it,
-      // and simply telling the party "could not load" was the "died out of
-      // nowhere" report. Retry instead - reload for a network error, recover
-      // the decoder for a media error - and only give up after a run of them
-      // with no progress between. FRAG_LOADED resets the counter, so a stream
-      // that is merely slow recovers forever while a genuinely dead one still
-      // stops. Non-fatal errors stay hls.js's own business (gap jumps, a 503
-      // from the relay's concurrency ceiling, a single stalled segment).
-      let fatalStreak = 0;
-      // The stream proxy relays anidb.app's own 5xx; a few of those in a row
-      // is the site being down, not a bad segment worth eight retries.
-      let downStreak = 0;
-      hls.on(Hls.Events.FRAG_LOADED, () => {
-        fatalStreak = 0;
-        downStreak = 0;
-      });
-      hls.on(Hls.Events.ERROR, (_event, data) => {
-        // Every error, fatal or not: a stalled party used to leave nothing
-        // in the console but the network tab's own "canceled" rows.
-        console.warn("[anime-party] hls error", {
-          type: data.type,
-          details: data.details,
-          fatal: data.fatal,
-          status: (data.response as { code?: number } | undefined)?.code,
-          url: data.frag?.url ?? (data as { url?: string }).url,
-        });
-        const status = (data.response as { code?: number } | undefined)?.code;
-        if (status === 502 || status === 503) {
-          if (++downStreak >= 3) {
-            fail(key, downMessage(status));
-            return;
-          }
-        }
-        if (!data.fatal || !hls) return;
-        if (++fatalStreak > 8) {
-          fail(key, "Could not load the stream.");
-          return;
-        }
-        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
-        else hls.startLoad();
-      });
-      hls.attachMedia(video);
-      hls.loadSource(master);
-    } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-      // Safari plays HLS natively, and a media element load is not subject
-      // to CORS, so this is the one path that needs no relay at all.
-      video.src = master;
-    } else {
-      fail(key, "This browser cannot play HLS.");
-      return;
-    }
-    ready = true;
-    console.info("[anime-party] player ready", { key, position, playing });
-    onReady?.();
-    sync();
+  function clearReadyTimer(): void {
+    if (readyTimer !== null) window.clearTimeout(readyTimer);
+    readyTimer = null;
   }
 
   function sync(): void {
-    if (!video || !ready) return;
-    video.volume = elementVolume(volume);
-    const next = `${episodeId}:${playing}:${position}`;
+    if (!ready) return;
+    const next = `${src}:${playing}:${position}`;
     if (next !== last) {
       last = next;
-      // Only a real disagreement moves the playhead: assigning currentTime
-      // what it already holds still fires a seek and stutters the picture.
-      if (Math.abs(video.currentTime - position) > 0.5) seekLocal(position);
+      // Only a real disagreement moves the playhead: a seek to where the
+      // embed already is still stalls the picture while it rebuffers.
+      if (Math.abs(currentTime() - position) > 0.5) seekLocal(position);
     }
     // Playback state is asserted every time, changed tuple or not: a freshly
-    // attached source starts paused even when the party never stopped.
-    if (playing) void autoplayResume.attempt(video);
-    else video.pause();
+    // loaded embed starts paused even when the party never stopped.
+    if (playing) {
+      command({ type: "play" });
+      autoplayResume.schedule(embed);
+    } else {
+      command({ type: "pause" });
+    }
   }
 
-  /**
-   * The browser paused on its own: an unmute after a muted autoplay, a
-   * decoder hiccup, a renderer handoff. The party state is authoritative,
-   * so ask once for playback back and let the watchdog raise the overlay if
-   * the answer is no. One attempt per pause event, so a refusal cannot loop.
-   */
-  function reassertPlayback(): void {
-    if (!video) return;
-    const el = video;
-    window.setTimeout(() => {
-      if (disposed || !playing || !el.paused) return;
-      void el.play().catch(() => {});
-    }, 0);
-    autoplayResume.schedule(el);
+  function noteDuration(value: number | undefined): void {
+    if (value === undefined || value <= 0 || value === duration) return;
+    duration = value;
+    onDuration?.(value);
+    if (!mediaReady) {
+      mediaReady = true;
+      onReady?.();
+    }
   }
 
-  function resumePlayback(): void {
-    if (video) autoplayResume.resume(video);
+  function onMessage(event: MessageEvent): void {
+    // Only this player's own iframe: the card and the call tile can both be
+    // mounted for a moment during a handoff, each with an embed of its own.
+    if (!frame || event.source !== frame.contentWindow) return;
+    const message = readPlayerEvent(event);
+    if (!message) return;
+    noteDuration(message.duration);
+    if (message.muted !== undefined) needsSound = message.muted && playing;
+    switch (message.type) {
+      case "ready": {
+        clearReadyTimer();
+        ready = true;
+        error = "";
+        report = {
+          position: message.position ?? 0,
+          at: Date.now(),
+          paused: message.paused ?? true,
+        };
+        console.info("[anime-party] player ready", { src, position, playing });
+        if (carry) {
+          // A sub/dub switch: land where the party is now, not where the
+          // last shared tick put it.
+          const elapsed = playing ? (Date.now() - carry.at) / 1_000 : 0;
+          seekLocal(carry.position + elapsed);
+          last = `${src}:${playing}:${position}`;
+        }
+        carry = null;
+        sync();
+        break;
+      }
+      case "time":
+      case "seeked":
+        if (message.position !== undefined)
+          report = {
+            position: message.position,
+            at: Date.now(),
+            paused: message.type === "seeked" ? (report?.paused ?? true) : false,
+          };
+        if (message.type === "time") onPlayable?.();
+        break;
+      case "play":
+        report = { position: currentTime(), at: Date.now(), paused: false };
+        onPlayable?.();
+        autoplayResume.onPlaying();
+        // Started under a paused party: the click that gave the sound back
+        // also toggled the embed's own playback. The party wins.
+        if (!playing) command({ type: "pause" });
+        else command({ type: "state" });
+        break;
+      case "pause":
+        report = { position: currentTime(), at: Date.now(), paused: true };
+        // The embed paused on its own: a stall, a click inside it, an unmute.
+        // The party state is authoritative, so ask once for playback back and
+        // let the watchdog raise the overlay if the answer is no. One attempt
+        // per pause event, so a refusal cannot loop.
+        if (playing) {
+          window.setTimeout(() => {
+            if (!disposed && playing) command({ type: "play" });
+          }, 0);
+          autoplayResume.schedule(embed);
+        }
+        break;
+      case "state":
+        if (message.position !== undefined && message.paused !== undefined)
+          report = {
+            position: message.position,
+            at: Date.now(),
+            paused: message.paused,
+          };
+        break;
+      case "ended":
+        report = { position: duration || currentTime(), at: Date.now(), paused: true };
+        onEnded?.();
+        break;
+      case "error":
+        fail("The player could not play this episode.");
+        break;
+    }
   }
 
-  /**
-   * The element learned how long the media is. The 1s reporter is not enough
-   * on its own: it goes quiet after one report while the party is paused, so
-   * somebody joining a paused party mid-load would never hear a duration and
-   * whatever waits on it - the card and tile handoff - would never release.
-   * Only a real number travels; a 0 or a NaN says nothing.
-   */
-  function reportDuration(): void {
-    const d = video?.duration;
-    if (typeof d === "number" && Number.isFinite(d) && d > 0) onDuration?.(d);
+  function load(next: string): void {
+    // A reload of the episode already playing is a sub/dub switch; keep
+    // its playhead to put back once the new page is up.
+    const episodeKey = `${showId}:${episode}`;
+    carry =
+      ready && episodeKey === loadedEpisode
+        ? { position: currentTime(), at: Date.now() }
+        : null;
+    loadedSrc = next;
+    loadedEpisode = episodeKey;
+    ready = false;
+    mediaReady = false;
+    last = "";
+    report = null;
+    duration = 0;
+    error = "";
+    needsSound = false;
+    autoplayResume.pause();
+    clearReadyTimer();
+    if (!next) return;
+    // A missing episode is a page that never says "ready": the embed serves
+    // its own "Not found" card with a 200, and nothing crosses the frame
+    // boundary to say so.
+    readyTimer = window.setTimeout(() => {
+      readyTimer = null;
+      if (ready || disposed) return;
+      fail(
+        lang === "eng"
+          ? "This episode did not load. zokoanime may have no Dub for it, so try Sub."
+          : "This episode did not load. zokoanime may not have it, or it is not answering."
+      );
+    }, 20_000);
   }
 
-  // Source lifecycle. Reads episodeId and lang ONLY - a re-resolve on every
-  // play, pause or seek would tear the stream down mid-episode.
+  // Source lifecycle. Reads src ONLY - a reload on every play, pause or
+  // seek would restart the episode.
   $effect(() => {
-    const key = `${episodeId}:${lang}`;
-    if (key === requestedKey) return;
-    void load(key, episodeId, lang);
+    if (src !== loadedSrc) load(src);
   });
 
   $effect(() => {
-    episodeId;
+    src;
     playing;
     position;
-    volume;
     sync();
     if (!playing) {
       autoplayResume.pause();
-    } else if (ready && video && !autoplayResume.playerIsPlaying(video)) {
-      autoplayResume.schedule(video);
+      needsSound = false;
     }
   });
 
+  // While the sound is off, ask the embed for its state each second: no
+  // event fires when a click inside it unmutes, and the shield has to come
+  // back the moment it does.
+  $effect(() => {
+    if (!needsSound) return;
+    const poll = window.setInterval(() => command({ type: "state" }), 1_000);
+    return () => window.clearInterval(poll);
+  });
+
+  function resumePlayback(): void {
+    autoplayResume.resume(embed);
+  }
+
   onMount(() => {
+    window.addEventListener("message", onMessage);
     const reporter = window.setInterval(() => {
       // A paused party does not move, so after one report there is nothing
       // to say until it plays again.
       if (!playing && reportedOnce) return;
       reportedOnce = true;
       onPosition?.(currentTime());
-      const d = video?.duration;
-      onDuration?.(typeof d === "number" && Number.isFinite(d) ? d : 0);
+      onDuration?.(duration);
     }, 1_000);
     return () => {
       // The handoff between the card and the call tile is where playback
       // has been reported to die; say which player left and where it was.
       console.info("[anime-party] player unmounting", {
-        key: requestedKey,
+        src,
         position: currentTime(),
-        paused: video?.paused ?? null,
       });
       disposed = true;
+      clearReadyTimer();
       autoplayResume.dispose();
+      window.removeEventListener("message", onMessage);
       window.clearInterval(reporter);
-      teardown();
     };
   });
 </script>
 
-<div
-  class:fixed={hidden}
-  class:pointer-events-none={hidden}
-  class:opacity-0={hidden}
-  class:-z-50={hidden}
-  class="relative space-y-2"
->
-  <!-- No native controls: every transport control on this surface is a
-       SYNCED one, and the browser's would move only this viewer. No pointer
-       shield either - unlike an iframe there is nothing underneath to
-       click. -->
-  <!-- svelte-ignore a11y_media_has_caption -->
-  <video
-    bind:this={video}
-    playsinline
-    class="min-h-[200px] w-full min-w-[200px] overflow-hidden rounded-md border border-border bg-black"
-    onloadedmetadata={() => {
-      reportDuration();
-      // The element can finally seek: land the position sync could not.
-      if (pendingSeek === null) return;
-      const target = pendingSeek;
-      pendingSeek = null;
-      seekLocal(target);
-    }}
-    ondurationchange={() => reportDuration()}
-    onplaying={() => {
-      onPlayable?.();
-      if (playing && video) autoplayResume.onPlaying(video);
-    }}
-    oncanplay={() => onPlayable?.()}
-    onpause={() => {
-      // Browsers fire pause right before ended; asking for playback back
-      // there would restart the episode from zero while the party is
-      // folding the skip to the next one.
-      if (!disposed && playing && !video?.ended) reassertPlayback();
-    }}
-    onended={() => onEnded?.()}
-    onerror={() => {
-      // Emptying the element on an episode change fires this too; only a
-      // live source failing is worth telling the party about.
-      if (ready) fail(requestedKey, "Could not load the stream.");
-    }}
-  ></video>
+<div class="relative">
+  {#if src}
+    <!-- A fresh element per source rather than a changed src attribute: an
+         iframe navigation joins the page's session history (Back would walk
+         the player), and a late event from the old page would read as the
+         new one's. Never sandboxed: the embed refuses to run in a sandboxed
+         frame. allow="autoplay" is what lets an episode change start with
+         sound after the page has had a click. -->
+    {#key src}
+      <iframe
+        bind:this={frame}
+        {src}
+        title="Anime player"
+        allow="autoplay; fullscreen"
+        class="block aspect-video min-h-[200px] w-full min-w-[200px] overflow-hidden rounded-md border border-border bg-black"
+        class:pointer-events-auto={needsSound}
+      ></iframe>
+    {/key}
+  {/if}
+  {#if !needsSound}
+    <!-- The embed's own controls move only this viewer. This inert shield
+         takes the pointer so the party's synced controls, drawn above, are
+         the only ones that act. -->
+    <div class="absolute inset-0 z-10" aria-hidden="true"></div>
+  {:else}
+    <p
+      class="pointer-events-none absolute left-1/2 top-3 z-30 w-fit max-w-[90%] -translate-x-1/2 rounded bg-black/80 px-2 py-1 text-center font-mono text-[11px] text-white"
+      role="status"
+    >
+      Your browser started this muted. Click the video to turn the sound on.
+    </p>
+  {/if}
   {#if needsResumeClick}
     <ResumeOverlay onclick={resumePlayback} />
   {/if}

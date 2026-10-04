@@ -11,7 +11,7 @@ import {
   syncResponderFor,
   type AnimeState,
 } from "./logic";
-import { IMAGE_HOST_PREFIX, type Episode, type Show } from "./anidb";
+import { IMAGE_HOST_PREFIX, type Episode, type Show } from "./anilist";
 
 const ctx = (name = "Alice") => ({
   senderDid: `did:${name}`,
@@ -22,17 +22,17 @@ const ctx = (name = "Alice") => ({
 });
 
 const show: Show = {
-  id: "bocchi-the-rock-729",
-  title: "Bocchi the Rock!",
-  image: "https://cdn.xlsbox.com/poster/small/1782735600/729.jpg",
+  id: 47917,
+  title: "BOCCHI THE ROCK!",
+  image: `${IMAGE_HOST_PREFIX}small/bx130003-HTDmeL4RGeJ4.png`,
 };
 const other: Show = {
-  id: "hitoribocchi-no-marumaru-seikatsu-2248",
-  title: "Hitoribocchi no Marumaru Seikatsu",
+  id: 37614,
+  title: "Hitoribocchi no Marumaruseikatsu",
   image: null,
 };
 
-const ep = (n: number): Episode => ({ id: 43599 + n, number: n });
+const ep = (n: number): Episode => ({ number: n });
 
 function update(state: AnimeState, data: unknown, name = "Alice") {
   return reduce(state, { data }, ctx(name));
@@ -68,7 +68,6 @@ describe("initialState", () => {
     expect(state.queue).toEqual([]);
     expect(state.currentIndex).toBeNull();
     expect(state.playing).toBe(false);
-    expect(state.notConfigured).toBe(false);
     expect(state.members).toEqual(new Map([["did:Alice", "Host"]]));
   });
 
@@ -83,48 +82,42 @@ describe("initialState", () => {
     expect(state.results).toEqual([]);
   });
 
-  it("carries the not-configured flag the command sets on a 204", () => {
-    expect(
-      initialState({ query: "bocchi", results: [], notConfigured: true, ownerDid: "did:A" })
-        .notConfigured
-    ).toBe(true);
-    expect(party({ notConfigured: "yes" }).notConfigured).toBe(false);
-  });
-
   it("validates every field of a forged payload", () => {
     const state = initialState({
       query: "x".repeat(500),
       ownerDid: "did:Alice",
       results: [
-        { id: "Bad-Case-1", title: "t", image: null }, // id not a slug
-        { id: "no-digits", title: "t", image: null },
-        { id: "ok-1", title: "", image: null }, // empty title
-        { id: "ok-2", title: "x".repeat(300), image: null }, // title too long
-        { id: "ok-3", title: "t", image: "/img/placeholder.svg" }, // relative
-        { id: "ok-4", title: "t", image: "http://insecure/a.jpg" },
-        { id: "ok-5", title: "t", image: 7 },
-        // https, but not the provider's poster CDN: a url every member's
+        { id: "47917", title: "t", image: null }, // id not a number
+        { id: 0, title: "t", image: null },
+        { id: 1.5, title: "t", image: null },
+        { id: 2 ** 31, title: "t", image: null },
+        { id: 11, title: "", image: null }, // empty title
+        { id: 12, title: "x".repeat(300), image: null }, // title too long
+        { id: 13, title: "t", image: "/img/placeholder.svg" }, // relative
+        { id: 14, title: "t", image: "http://insecure/a.jpg" },
+        { id: 15, title: "t", image: 7 },
+        // https, but not the provider's cover CDN: a url every member's
         // browser and OS media surface would fetch is a beacon, so the host
         // is pinned rather than merely required to be secure.
-        { id: "ok-6", title: "t", image: "https://beacon.example/a.jpg" },
-        { id: "ok-7", title: "t", image: "https://cdn.xlsbox.com.evil/a.jpg" },
+        { id: 16, title: "t", image: "https://beacon.example/a.jpg" },
+        { id: 17, title: "t", image: "https://s4.anilist.co.evil/file/a.jpg" },
         null,
         "nope",
-        { id: "good-1", title: "Good", image: `${IMAGE_HOST_PREFIX}a.jpg` },
-        { id: "good-1", title: "Dupe", image: null },
+        { id: 21, title: "Good", image: `${IMAGE_HOST_PREFIX}a.jpg` },
+        { id: 21, title: "Dupe", image: null },
       ],
-      show: { id: "not a slug", title: "t", image: null },
+      show: { id: "21", title: "t", image: null },
     });
     expect(state.query).toBe(""); // over the 100 char cap
     expect(state.show).toBeNull();
     expect(state.results).toEqual([
-      { id: "good-1", title: "Good", image: `${IMAGE_HOST_PREFIX}a.jpg` },
+      { id: 21, title: "Good", image: `${IMAGE_HOST_PREFIX}a.jpg` },
     ]);
   });
 
   it("caps a forged results list at SEARCH_CAP", () => {
     const results = Array.from({ length: SEARCH_CAP + 20 }, (_, i) => ({
-      id: `show-${i}`,
+      id: i + 1,
       title: "T",
       image: null,
     }));
@@ -204,7 +197,7 @@ describe("pick-show", () => {
   it("refuses a forged show", () => {
     const open = initialState({ ownerDid: "did:Alice" });
     expect(
-      update(open, { action: "pick-show", show: { id: "nope", title: "t", image: null } })
+      update(open, { action: "pick-show", show: { id: -3, title: "t", image: null } })
     ).toBe(open);
     expect(update(open, { action: "pick-show", show: null })).toBe(open);
   });
@@ -271,13 +264,12 @@ describe("add", () => {
     const state = update(base, {
       action: "add",
       episodes: [
-        { id: 0, number: 1 },
-        { id: -1, number: 1 },
-        { id: 2 ** 31, number: 1 },
-        { id: 1.5, number: 1 },
-        { id: 5, number: -1 },
-        { id: 6, number: 1.5 },
-        { id: "7", number: 1 },
+        { number: 0 }, // episodes start at 1
+        { number: -1 },
+        { number: 1.5 },
+        { number: "7" },
+        { number: 2001 }, // past EPISODES_CAP
+        {},
         null,
         ep(9),
       ],
@@ -417,7 +409,7 @@ describe("anime reducer", () => {
     ).toBe(full);
     const s = watching([1]);
     expect(
-      update(s, { action: "step", episode: { id: -1, number: 2 }, at: "end" })
+      update(s, { action: "step", episode: { number: -2 }, at: "end" })
     ).toBe(s);
     expect(
       update(s, { action: "step", episode: ep(2), at: "end" }, "Stranger")

@@ -1,8 +1,13 @@
 import type { UpdateCtx } from "$lib/plugins/api";
-// The shapes and the two pure validators anidb.ts already owns. Nothing
+// The shapes and the two pure validators anilist.ts already owns. Nothing
 // here calls a fetcher: reduce replays, and a replayed fetch is a bug.
-import type { Episode, Show } from "./anidb";
-import { IMAGE_HOST_PREFIX, SEARCH_CAP, validShowId } from "./anidb";
+import type { Episode, Show } from "./anilist";
+import {
+  EPISODES_CAP,
+  IMAGE_HOST_PREFIX,
+  SEARCH_CAP,
+  validShowId,
+} from "./anilist";
 
 export type ActivityAction =
   | "searched"
@@ -25,8 +30,7 @@ export type ActivityAction =
 export interface Activity {
   senderName: string;
   action: ActivityAction;
-  /** The episode NUMBER the action was about, for display - not its id.
-   *  "Bruno skipped 7" is the sentence; the id means nothing to a reader. */
+  /** The episode NUMBER the action was about, for display. */
   episode: number | null;
 }
 
@@ -61,9 +65,6 @@ export interface AnimeState {
   members: Map<string, string>;
   syncRequest?: { id: string; requesterDid: string };
   syncResponse?: { id: string; targetDid: string; duration: number };
-  /** The command's search hit a 204: this instance has not allowlisted
-   *  anidb.app. A fact the card states, not an error it retries. */
-  notConfigured: boolean;
 }
 
 export { SEARCH_CAP };
@@ -96,7 +97,7 @@ export const QUERY_CAP = 100;
 const IMAGE_CAP = 512;
 
 /** A show as it arrives from a peer: every field bounded, image on the
- *  provider's poster CDN or nothing. Pinned to one host rather than allowed
+ *  provider's cover CDN or nothing. Pinned to one host rather than allowed
  *  to be any https url, because a peer-supplied image url is a beacon: the
  *  card renders it into an <img> every member's browser fetches, and it
  *  reaches each member's OS media surface too, so whatever host is named
@@ -120,17 +121,16 @@ function validShow(value: unknown): value is Show {
   );
 }
 
+/** Episodes are numbered from 1 and the number is the whole identity (the
+ *  embed addresses show id plus number), bounded by the provider's cap. */
 function validEpisode(value: unknown): value is Episode {
   const ep = value as Episode | null;
   if (!ep || typeof ep !== "object") return false;
   return (
-    typeof ep.id === "number" &&
-    Number.isInteger(ep.id) &&
-    ep.id > 0 &&
-    ep.id < 2 ** 31 &&
     typeof ep.number === "number" &&
     Number.isInteger(ep.number) &&
-    ep.number >= 0
+    ep.number >= 1 &&
+    ep.number <= EPISODES_CAP
   );
 }
 
@@ -139,7 +139,7 @@ function validEpisode(value: unknown): value is Episode {
 function validShows(value: unknown): Show[] {
   if (!Array.isArray(value)) return [];
   const out: Show[] = [];
-  const seen = new Set<string>();
+  const seen = new Set<number>();
   for (const raw of value) {
     if (out.length >= SEARCH_CAP) break;
     if (!validShow(raw) || seen.has(raw.id)) continue;
@@ -211,7 +211,6 @@ export function initialState(cardData: unknown): AnimeState {
     results?: unknown;
     show?: unknown;
     ownerDid?: unknown;
-    notConfigured?: unknown;
   } | null;
   const show = validShow(data?.show) ? data.show : null;
   // cardData comes from a peer, so an absent or empty ownerDid is not a
@@ -242,7 +241,6 @@ export function initialState(cardData: unknown): AnimeState {
     closed: ownerDid === "",
     ownerDid,
     members: new Map(ownerDid ? [[ownerDid, "Host"]] : []),
-    notConfigured: data?.notConfigured === true,
   };
 }
 
@@ -306,8 +304,8 @@ function withActivity(
  * concrete episode, so this is how the reducer tells "already queued, just
  * move to it" from "new, grow the queue".
  */
-function indexOfEpisode(anime: AnimeState, id: number): number {
-  return anime.queue.findIndex((episode) => episode.id === id);
+function indexOfEpisode(anime: AnimeState, number: number): number {
+  return anime.queue.findIndex((episode) => episode.number === number);
 }
 
 export function reduce(
@@ -472,13 +470,13 @@ export function reduce(
       // Already-queued episodes are dropped rather than rejecting the whole
       // batch: "add the season" over a queue that holds episode 1 should
       // land 2..12, not nothing.
-      const have = new Set(anime.queue.map((ep) => ep.id));
+      const have = new Set(anime.queue.map((ep) => ep.number));
       const additions: Episode[] = [];
       for (const raw of data.episodes.slice(0, ADD_BATCH)) {
         if (additions.length >= room) break;
-        if (!validEpisode(raw) || have.has(raw.id)) continue;
-        have.add(raw.id);
-        additions.push({ id: raw.id, number: raw.number });
+        if (!validEpisode(raw) || have.has(raw.number)) continue;
+        have.add(raw.number);
+        additions.push({ number: raw.number });
       }
       if (!additions.length) return anime;
       const landedAt = anime.queue.length;
@@ -509,20 +507,17 @@ export function reduce(
     case "step": {
       // Next and previous walk the SHOW, not just the queue. The client holds
       // the show's full episode list (the reducer never fetches), resolves the
-      // adjacent episode, and sends it here as a concrete { id, number }. If it
+      // adjacent episode, and sends it here as a concrete { number }. If it
       // is already queued we just move to it; otherwise we grow the queue by
       // one - at the end for a forward step, at the front for a backward one -
       // so an episode that was never added still plays. `at` defaults forward.
       if (!validEpisode(data.episode)) return anime;
-      const episode: Episode = {
-        id: data.episode.id,
-        number: data.episode.number,
-      };
+      const episode: Episode = { number: data.episode.number };
       const back = data.at === "start";
       const action: ActivityAction = back
         ? "went to the previous track"
         : "skipped";
-      const at = indexOfEpisode(anime, episode.id);
+      const at = indexOfEpisode(anime, episode.number);
       if (at !== -1) {
         if (at === anime.currentIndex) return anime;
         return withActivity(

@@ -11,7 +11,6 @@
     Play,
     Search,
     SkipBack,
-    PictureInPicture2,
     SkipForward,
     Trash2,
   } from "@lucide/svelte";
@@ -25,12 +24,11 @@
   import {
     episodes as fetchEpisodes,
     search as searchShows,
-    NotConfiguredError,
     UpstreamDownError,
     type Episode,
     type Lang,
     type Show,
-  } from "./anidb";
+  } from "./anilist";
   import {
     ADD_BATCH,
     QUEUE_CAP,
@@ -55,20 +53,14 @@
     rendererSyncUpdate,
     type RendererHandoff,
   } from "./tile-presence.svelte";
-  import {
-    audioVolume,
-    initializeAudioVolume,
-    setAudioVolume,
-  } from "./audio-volume.svelte";
   import { createHostDepartureGrace } from "./host-departure";
 
-  /** The one sentence an unconfigured instance gets to say. Not an error to
-   *  retry: the operator has to allowlist the hosts. */
+  /** AniList is down or rate-limiting this browser: a fact about the
+   *  catalog, not about the party, so say when to try again. */
   const upstreamDown = (err: UpstreamDownError): string =>
-    `anidb.app is not answering right now${err.status ? ` (it said ${err.status})` : ""}. Nothing here is broken; try again in a few minutes.`;
-  const NOT_CONFIGURED =
-    "This instance is not configured for anime-party " +
-    "(PLUGIN_PROXY_HOSTS needs anidb.app and hls.anidb.app).";
+    err.status === 429
+      ? "AniList is limiting how often this browser can ask. Try again in a minute."
+      : `AniList is not answering right now${err.status ? ` (it said ${err.status})` : ""}. Nothing here is broken; try again in a few minutes.`;
 
 let cardsSnapshot:
   | Promise<Array<{ id: string; senderDid: string; state?: unknown }>>
@@ -109,35 +101,26 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   let addOpen = $state(false);
   let error = $state("");
   let player = $state<AnimePlayer | null>(null);
-  // Chromium and Safari have the API; Firefox floats videos only from its
-  // own hover toggle, so the button would do nothing there.
-  const pipAvailable = $derived(
-    typeof document !== "undefined" &&
-      document.pictureInPictureEnabled === true &&
-      typeof host.pictureInPicture === "function"
-  );
   let playerHover = $state(false);
   // Sub or dub: this DEVICE's preference, read from plugin storage and
   // never sent to the room. Two members can watch the same second of the
   // same episode in different audio languages.
   let lang = $state<Lang>("jpn");
-  /** What actually played, when the episode had no track in `lang`. */
-  let resolvedLang = $state<Lang | null>(null);
   // Search / pick-a-show, all local: the results that everyone sees travel
   // as one "search" update, not as a fetch per member.
   let query = $state("");
   let searching = $state(false);
   let changingShow = $state(false);
-  // The show's episode list, fetched directly (open CORS) by whoever opens
-  // the picker, and never synced: only the chosen episodes are.
+  // The show's episode list, fetched directly (open CORS) by each joined
+  // member, and never synced: only the chosen episodes are.
   let episodeList = $state<Episode[]>([]);
   let episodesLoading = $state(false);
   let episodesError = $state("");
-  let episodesLoadedFor = "";
+  let episodesLoadedFor: number | null = null;
   // The classic below-player controls only serve the surfaces that mount no
   // local player (the call tile is rendering); when the card IS the
-  // renderer, the overlay chrome on the player owns transport, seek and
-  // volume - the same chrome the call tile has.
+  // renderer, the overlay chrome on the player owns transport and seek -
+  // the same chrome the call tile has.
   const overlayControls = $derived(tilePresence.count === 0);
   // Seeded from the shared position, then owned locally (the scrubber and
   // the renderer handoff both write it), so this must NOT track anime.
@@ -151,16 +134,12 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   let seeking = $state(false);
   let syncedJoinCount = 0;
   let syncedRequestId = "";
-  const volume = $derived(audioVolume.value);
   let pending = $state<string | null>(null);
   let playerLoading = $state(true);
   // Re-read on reconnect below, so it stays $state - it just must not
   // capture host reactively here.
   let selfDid = $state(untrack(() => host.selfDid()));
   let lastDriftSeekAt = 0;
-  /** The playback rate the drift loop last asked for, so "none" knows
-   *  whether there is a nudge to undo. */
-  let localRate = 1;
   // Fresh clock offset to the current tick's author, for projection.
   $effect(() => {
     if (anime.tickBy && anime.tickBy !== selfDid) ensureClock(host, anime.tickBy);
@@ -236,7 +215,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     anime.currentIndex === null ? null : anime.queue[anime.currentIndex]
   );
   /** The renderer-handoff key for the playing episode. */
-  const currentKey = $derived(current ? String(current.id) : null);
+  const currentKey = $derived(current ? String(current.number) : null);
   const currentLabel = $derived(episodeLabel(anime.show, current));
   const transitionPosition = $derived.by(() => {
     if (!transition) return localPosition;
@@ -269,9 +248,9 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     }))
   );
   /** Which episodes are already in the room's queue, for the add panel. */
-  const queuedIds = $derived(new Set(anime.queue.map((ep) => ep.id)));
+  const queuedNumbers = $derived(new Set(anime.queue.map((ep) => ep.number)));
   const unqueued = $derived(
-    episodeList.filter((ep) => !queuedIds.has(ep.id))
+    episodeList.filter((ep) => !queuedNumbers.has(ep.number))
   );
   /** On the latest episode the show's list currently knows about. Open-ended
    *  on purpose: the show may still be airing, so this is not "the show
@@ -280,12 +259,6 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     current != null &&
       episodeList.length > 0 &&
       current.number >= Math.max(...episodeList.map((e) => e.number))
-  );
-  /** The one-line note for an episode that had no track in `lang`. */
-  const langNote = $derived(
-    resolvedLang && resolvedLang !== lang
-      ? `Only ${resolvedLang === "eng" ? "Dub" : "Sub"} is available for this episode`
-      : ""
   );
 
   $effect(() => {
@@ -419,8 +392,6 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       playing: anime.playing,
       onPlay: () => void togglePlayback(),
       onPause: () => void togglePlayback(),
-      // Chromium floats this element on a tab switch while it plays.
-      pipVideo: player?.element() ?? undefined,
       onNext: () => void goNext(),
       onPrevious: () => void previous(),
     });
@@ -476,7 +447,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     // press is a deliberate no-op rather than a stale skip action.
     if (n)
       await send(
-        { action: "step", episode: { id: n.id, number: n.number }, at: "end" },
+        { action: "step", episode: { number: n.number }, at: "end" },
         "Next episode…"
       );
   }
@@ -484,7 +455,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     const p = prevEpisode();
     if (p)
       await send(
-        { action: "step", episode: { id: p.id, number: p.number }, at: "start" },
+        { action: "step", episode: { number: p.number }, at: "start" },
         "Previous episode…"
       );
   }
@@ -511,11 +482,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     if (anime.currentIndex === null) return;
     const n = nextEpisode();
     if (n) {
-      await send({
-        action: "step",
-        episode: { id: n.id, number: n.number },
-        at: "end",
-      });
+      await send({ action: "step", episode: { number: n.number }, at: "end" });
     } else {
       // The last episode finished: stop the party where it ended instead of
       // trying to keep a finished video "playing". Pause needs a finite
@@ -555,19 +522,8 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       pending = null;
     }
   }
-  function setVolume(value: number) {
-    setAudioVolume(host.storage, value);
-  }
   async function toggleLang() {
     lang = lang === "jpn" ? "eng" : "jpn";
-    // The note belongs to the episode AND the preference; a fresh choice
-    // deserves a fresh answer from the resolver.
-    resolvedLang = null;
-    // Sub and dub are two different files upstream, so the player tears the
-    // element down and calls load(), which puts playbackRate back to 1. The
-    // episode did not change, so nothing else clears this - and a stale
-    // localRate makes the drift law skip the nudge it needs to re-apply.
-    localRate = 1;
     try {
       await host.storage.set("lang", lang);
     } catch {
@@ -640,11 +596,9 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       await send({ action: "search", query: q, results }, "Searching…");
     } catch (err) {
       error =
-        err instanceof NotConfiguredError
-          ? NOT_CONFIGURED
-          : err instanceof UpstreamDownError
-            ? upstreamDown(err)
-            : "The search could not be read. anidb.app may have changed.";
+        err instanceof UpstreamDownError
+          ? upstreamDown(err)
+          : "The search could not be read. AniList may have changed.";
     } finally {
       searching = false;
     }
@@ -655,13 +609,13 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     await send({ action: "pick-show", show }, "Picking the show…");
   }
 
-  async function loadEpisodes(showId: string) {
+  async function loadEpisodes(showId: number) {
     episodesLoading = true;
     episodesError = "";
     try {
       episodeList = await fetchEpisodes(showId);
       if (!episodeList.length)
-        episodesError = "anidb.app lists no episodes for this show.";
+        episodesError = "AniList lists no aired episodes for this show yet.";
     } catch (err) {
       episodesError =
         err instanceof UpstreamDownError
@@ -674,8 +628,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   // Fetched once per show for any joined viewer, not only when the add panel
   // is open: Next and Previous walk the show's full list, so the list has to
   // be present wherever navigation can happen. Same cached episodes() call,
-  // a direct request from every member's own browser, so it costs nothing
-  // extra.
+  // a direct request from every member's own browser.
   $effect(() => {
     const showId = anime.show?.id;
     if (!joined || !showId || showId === episodesLoadedFor) return;
@@ -689,7 +642,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   async function addEpisodes(list: Episode[]) {
     const room = QUEUE_CAP - anime.queue.length;
     const fresh = list
-      .filter((ep) => !queuedIds.has(ep.id))
+      .filter((ep) => !queuedNumbers.has(ep.number))
       .slice(0, Math.max(0, room));
     if (!fresh.length) return;
     for (let i = 0; i < fresh.length; i += ADD_BATCH) {
@@ -701,27 +654,14 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     }
   }
 
-  /** seek, rate, or undo a nudge - the whole control law, which a native
-   *  video can honour (see watch-drift.ts). */
+  /** The seek lane of the control law only: the embed takes no playback
+   *  rate, so "rate" is as good as none here (see watch-drift.ts). */
   function applyCorrection(correction: Correction | null) {
-    if (!correction || !player) return;
-    if (correction.action === "seek") {
-      // Seeks stay rate-limited: a correction storm is worse than drift.
-      if (Date.now() - lastDriftSeekAt <= 5_000) return;
-      lastDriftSeekAt = Date.now();
-      if (localRate !== 1) {
-        localRate = 1;
-        player.setRate(1);
-      }
-      player.seekLocal(correction.targetPosition);
-    } else if (correction.action === "rate") {
-      if (localRate === correction.rate) return;
-      localRate = correction.rate;
-      player.setRate(correction.rate);
-    } else if (localRate !== 1) {
-      localRate = 1;
-      player.setRate(1);
-    }
+    if (!correction || !player || correction.action !== "seek") return;
+    // Seeks stay rate-limited: a correction storm is worse than drift.
+    if (Date.now() - lastDriftSeekAt <= 5_000) return;
+    lastDriftSeekAt = Date.now();
+    player.seekLocal(correction.targetPosition);
   }
 
   $effect(() => {
@@ -734,8 +674,6 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
   $effect(() => {
     currentKey;
     playerLoading = true;
-    localRate = 1;
-    resolvedLang = null;
   });
   // A fresh mount of a PLAYING party (an F5, a room reopen) starts from the
   // folded position, which is only as fresh as the last action - ask a
@@ -759,7 +697,6 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
     void send({ action: "resync", requestId, requesterDid: selfDid });
   });
   onMount(() => {
-    void initializeAudioVolume(host.storage);
     void host.storage
       .get("lang")
       .then((stored) => {
@@ -837,26 +774,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       >{/if}
   </div>
 
-  {#if anime.notConfigured}
-    <!-- Nothing else to show: without the two allowlisted hosts there is no
-         search, no stream, and no amount of clicking changes that. -->
-    <p class="py-6 text-center text-sm text-muted-foreground">
-      {NOT_CONFIGURED}
-    </p>
-    {#if selfDid === anime.ownerDid && !anime.closed}
-      <Tip text="Disband party">
-        {#snippet children(props)}
-          <button
-            {...props}
-            class="mx-auto block rounded border border-destructive px-3 py-2 text-destructive disabled:opacity-60"
-            disabled={pending !== null}
-            onclick={() => send({ action: "close" }, "Disbanding party…")}
-            aria-label="Disband party"><CircleOff class="size-4" /></button
-          >
-        {/snippet}
-      </Tip>
-    {/if}
-  {:else if anime.closed}
+  {#if anime.closed}
     <p class="py-8 text-center text-sm text-muted-foreground">
       This party has ended.
     </p>
@@ -893,8 +811,8 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
             onkeydown={(event) => {
               if (event.key === "Enter") void runSearch();
             }}
-            placeholder="Search anidb.app"
-            aria-label="Search anidb.app"
+            placeholder="Search AniList"
+            aria-label="Search AniList"
           /><Tip text="Search">
             {#snippet children(props)}
               <button
@@ -961,11 +879,11 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
         >
           <AnimePlayer
             bind:this={player}
-            episodeId={current.id}
+            showId={anime.show?.id ?? null}
+            episode={current.number}
             {lang}
             playing={anime.playing}
             position={transition?.position ?? syncPosition}
-            {volume}
             onPosition={(value) => {
               localPosition = value;
               // Same drift correction as the call tile: local only, never
@@ -976,11 +894,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
                     stateTick(anime),
                     clockEstimateFor(anime.tickBy),
                     anime.tickBy === selfDid,
-                    {
-                      position: value,
-                      paused: !anime.playing,
-                      rate: localRate,
-                    },
+                    { position: value, paused: !anime.playing },
                     Date.now()
                   )
                 );
@@ -1003,7 +917,6 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
             onReady={() => (playerLoading = false)}
             onPlayable={() => (playerLoading = false)}
             onError={() => (playerLoading = false)}
-            onResolvedLang={(value) => (resolvedLang = value)}
           />
           <!-- The same synced chrome the call tile renders: center
                play/pause, transport bar, vignette - revealed on hover. -->
@@ -1011,7 +924,6 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
             playing={anime.playing}
             position={localPosition}
             duration={rendererDuration}
-            {volume}
             {lang}
             visible={playerHover}
             vignetteBoost
@@ -1024,7 +936,6 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
             onSeek={(p) =>
               void send({ action: "seek", position: p, atMs: Date.now() })}
             onSeekBy={(d) => void seekBy(d)}
-            onVolume={setVolume}
             onToggleLang={() => void toggleLang()}
           />
         </div>
@@ -1035,21 +946,28 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       <p class="truncate font-mono text-[11px] text-muted-foreground">
         {currentLabel}
       </p>
-      {#if langNote}<p class="text-[11px] text-muted-foreground">
-          {langNote}
-        </p>{/if}
     </div>
   {:else if !joined}
     <p class="py-5 text-center text-sm text-muted-foreground">
       Join this party to watch together.
     </p>
   {:else}
+    <!-- A show and no queue is the moment right after picking: say what
+         comes next, and make the answer the link, rather than leaving the
+         list button in the toolbar below to be discovered. -->
     <div class="space-y-1">
-      <p class="text-sm text-muted-foreground">The queue is empty.</p>
+      <p class="text-sm text-muted-foreground">
+        The queue is empty.
+        {#if !addOpen}<button
+            type="button"
+            class="text-primary underline"
+            onclick={() => (addOpen = true)}>Add episodes</button
+          >{/if}
+      </p>
     </div>
   {/if}
 
-  {#if !anime.closed && !anime.notConfigured && anime.show && !changingShow}
+  {#if !anime.closed && anime.show && !changingShow}
     <!-- The show header. "Change show" only while nothing is queued: the
          reducer refuses pick-show past that, and offering a button that
          cannot work is worse than not offering it. -->
@@ -1081,7 +999,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
       {pending}
     </p>{/if}
 
-  {#if !anime.closed && !anime.notConfigured && joined && anime.show && !changingShow}<div
+  {#if !anime.closed && joined && anime.show && !changingShow}<div
       class="space-y-1"
     >
       {#if !overlayControls}
@@ -1147,22 +1065,6 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
                   >
                 {/snippet}
               </Tip>
-              {#if pipAvailable}
-                <Tip text="Picture in picture">
-                  {#snippet children(props)}
-                    <button
-                      {...props}
-                      class="rounded border border-border px-3 py-2"
-                      onclick={() => {
-                        const v = player?.element();
-                        if (v) void host.pictureInPicture(v);
-                      }}
-                      aria-label="Picture in picture"
-                      ><PictureInPicture2 class="size-4" /></button
-                    >
-                  {/snippet}
-                </Tip>
-              {/if}
             {/if}
             <Tip text={queueOpen ? "Hide queue" : "Show queue"}>
               {#snippet children(props)}
@@ -1217,29 +1119,6 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
               </Tip>{/if}
           </div>
         </div>
-        <!-- oninput, not onchange: change fires on RELEASE, so the volume
-             jumped only once the drag ended and there was no way to find a
-             level by ear. The seek slider above keeps the split because
-             scrubbing on every pixel is expensive; volume has no such
-             reason. -->
-        {#if !overlayControls}
-          <label class="flex items-center gap-2"
-            >Vol <input
-              class="w-1/4 max-w-24"
-              type="range"
-              min="0"
-              max="100"
-              value={volume}
-              oninput={(event) => setVolume(Number(event.currentTarget.value))}
-              aria-label="Volume (only you)"
-            /><!-- aria-hidden: a range input already announces its value, and
-               without this the accessible NAME became "Vol 74%" and changed
-               on every pixel of the drag. -->
-            <span aria-hidden="true" class="w-8 shrink-0 text-right tabular-nums"
-              >{volume}%</span
-            ></label
-          >
-        {/if}
       </div>
       {#if atLatest}
         <p class="text-[11px] text-muted-foreground">You're on the latest episode. More may appear here if the show is still airing.</p>
@@ -1253,7 +1132,7 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
         {#if !anime.queue.length}
           <p class="text-xs text-muted-foreground">Nothing queued yet.</p>
         {/if}
-        {#each anime.queue as episode, index (episode.id)}<div
+        {#each anime.queue as episode, index (episode.number)}<div
             class="flex items-center justify-between gap-2 text-xs"
           >
             <button
@@ -1298,13 +1177,13 @@ function sharedCardsSnapshot(host: HostApi, force = false) {
           class="queue-list max-h-52 space-y-1 overflow-y-scroll pr-1"
           style="max-height: 13rem; overflow-y: scroll; scrollbar-gutter: stable;"
         >
-          {#each episodeList as episode (episode.id)}<div
+          {#each episodeList as episode (episode.number)}<div
               class="flex items-center justify-between gap-2 text-xs"
             >
               <span class="min-w-0 flex-1 truncate"
                 >Episode {episode.number}</span
               >
-              {#if queuedIds.has(episode.id)}
+              {#if queuedNumbers.has(episode.number)}
                 <span class="shrink-0 text-muted-foreground">Queued</span>
               {:else}
                 <Tip text="Add episode {episode.number}">

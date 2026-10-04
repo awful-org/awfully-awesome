@@ -6,21 +6,19 @@
     SkipForward,
     RotateCcw,
     RotateCw,
-    Volume2,
     Languages,
   } from "@lucide/svelte";
   import { Tip } from "$lib/plugins/ui";
-  import type { Lang } from "./anidb";
+  import type { Lang } from "./anilist";
 
   interface Props {
     playing: boolean;
     /** Live playback position; the slider follows it unless dragging. */
     position: number;
     duration: number;
-    volume: number;
     /**
      * Audio language of THIS viewer's stream. Sub and dub are two different
-     * files on the provider, so the choice is per-viewer and local: nothing
+     * embeds on the provider, so the choice is per-viewer and local: nothing
      * about it is sent to the room, and a friend can watch dubbed while you
      * watch subbed on the same synchronized second.
      */
@@ -40,14 +38,12 @@
     onSeek: (position: number) => void;
     /** Relative nudge; the parent clamps via seekTarget. */
     onSeekBy: (delta: number) => void;
-    onVolume: (value: number) => void;
     onToggleLang: () => void;
   }
   let {
     playing,
     position,
     duration,
-    volume,
     lang,
     visible,
     vignetteBoost = false,
@@ -57,7 +53,6 @@
     onSkip,
     onSeek,
     onSeekBy,
-    onVolume,
     onToggleLang,
   }: Props = $props();
 
@@ -96,8 +91,10 @@
      center play/pause (the most common action deserves the biggest target),
      and the bottom transport bar. The root is pointer-inert; only the
      controls opt back in, so the surface underneath keeps its click
-     behavior. Every control here acts on the WHOLE party except volume and
-     the audio language, which are this device's own. -->
+     behavior. Every control here acts on the WHOLE party except the audio
+     language, which is this device's own. There is no volume slider: the
+     embed takes no volume command, so loudness is the system's or the
+     tab's. -->
 <div class="pointer-events-none absolute inset-0 z-20">
   <div
     class="absolute inset-0 transition-opacity duration-300 {visible
@@ -239,9 +236,8 @@
         {fmt(seekValue)} / {fmt(duration)}
       </span>
       <span class="ml-auto flex items-center gap-1.5">
-        <!-- Sub or dub. Local, like volume: the party is synchronized on the
-             episode and the second, not on which audio track your own
-             browser fetched. -->
+        <!-- Sub or dub. Local: the party is synchronized on the episode and
+             the second, not on which audio track your own browser fetched. -->
         <Tip text="Audio: {langLabel} (only you)">
           {#snippet children(props)}
             <button
@@ -256,16 +252,6 @@
             </button>
           {/snippet}
         </Tip>
-        <Volume2 class="size-3.5 text-white/70" />
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={volume}
-          oninput={(event) => onVolume(Number(event.currentTarget.value))}
-          aria-label="Volume (only you)"
-          class="h-1 w-20 cursor-pointer accent-white"
-        />
       </span>
       {#if queueLabel}
         <span class="font-mono text-[10px] text-white/70">{queueLabel}</span>

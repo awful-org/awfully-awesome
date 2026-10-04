@@ -15,7 +15,7 @@
     syncResponderFor,
     type AnimeState,
   } from "./logic";
-  import { episodes as fetchEpisodes, type Episode, type Lang } from "./anidb";
+  import { episodes as fetchEpisodes, type Episode, type Lang } from "./anilist";
   import { episodeLabel } from "./titles";
   import { driftCorrection, projectedTickPosition } from "./watch-drift";
   import { clockEstimateFor, ensureClock } from "./clock";
@@ -28,11 +28,6 @@
     handoffIsReadyToRelease,
     takeLiveRendererControl,
   } from "./tile-presence.svelte";
-  import {
-    audioVolume,
-    initializeAudioVolume,
-    setAudioVolume,
-  } from "./audio-volume.svelte";
 
   interface Props {
     card: Message;
@@ -55,13 +50,12 @@
     anime.currentIndex === null ? null : anime.queue[anime.currentIndex]
   );
   /** The renderer-handoff key for the playing episode. */
-  const currentKey = $derived(current ? String(current.id) : null);
+  const currentKey = $derived(current ? String(current.number) : null);
 
   // The show's full episode list, so Next and Previous walk the SHOW, not
-  // just the queue. Same cached, deduped episodes() call the card uses, so
-  // fetching it here costs the instance relay nothing.
+  // just the queue. Same cached, deduped episodes() call the card uses.
   let episodeList = $state<Episode[]>([]);
-  let episodesLoadedFor = "";
+  let episodesLoadedFor: number | null = null;
   $effect(() => {
     const showId = anime.show?.id;
     if (!joined || !showId || showId === episodesLoadedFor) return;
@@ -115,22 +109,12 @@
     autoJoined = true;
     void send({ action: "join" });
   });
-  const volume = $derived(audioVolume.value);
   // Sub or dub, this device's own: read from plugin storage, toggled from
   // the chrome, never sent to the room.
   let lang = $state<Lang>("jpn");
-  let resolvedLang = $state<Lang | null>(null);
-  const langNote = $derived(
-    resolvedLang && resolvedLang !== lang
-      ? `Only ${resolvedLang === "eng" ? "Dub" : "Sub"} is available for this episode`
-      : ""
-  );
   let localPosition = $state(0);
   let duration = $state(0);
   let lastDriftSeekAt = 0;
-  /** The playback rate the drift loop last asked for, so "none" knows
-   *  whether there is a nudge to undo. */
-  let localRate = 1;
   // Keep a fresh clock offset to whoever wrote the current tick, so its
   // position projects onto this machine's clock.
   $effect(() => {
@@ -174,8 +158,6 @@
     handoffPosition = null;
     playerLoading = true;
     activeResyncId = null;
-    localRate = 1;
-    resolvedLang = null;
   });
   $effect(() => {
     if (!joined || !currentKey) {
@@ -219,7 +201,6 @@
     }
   });
   $effect(() => {
-    void initializeAudioVolume(host.storage);
     void host.storage
       .get("lang")
       .then((stored) => {
@@ -229,20 +210,16 @@
         // Storage is unreadable; subbed is the default either way.
       });
   });
-  function setVolume(value: number) {
-    setAudioVolume(host.storage, value);
-  }
-
   // Keyboard shortcuts, scoped to the call tile and only while it is focused
   // (the listener is on the tile root, so it fires only when the tile or one
   // of its controls has focus, never while a chat or search field does). The
   // arrows mirror the on-screen controls: left/right are the same synced
-  // -10s / +10s the seek buttons send, up/down are this viewer's own volume.
-  const VOLUME_STEP = 5;
+  // -10s / +10s the seek buttons send. Up and down are left alone: they are
+  // a volume shortcut elsewhere, and the embed takes no volume command.
   function onTileKeydown(event: KeyboardEvent) {
     if (!joined || !current) return;
     const intent = watchKeyIntent(event.key);
-    if (!intent) return;
+    if (!intent || intent === "volume-up" || intent === "volume-down") return;
     event.preventDefault();
     switch (intent) {
       case "toggle-play":
@@ -253,12 +230,6 @@
         break;
       case "seek-forward":
         void seekBy(10);
-        break;
-      case "volume-up":
-        setVolume(Math.min(100, volume + VOLUME_STEP));
-        break;
-      case "volume-down":
-        setVolume(Math.max(0, volume - VOLUME_STEP));
         break;
     }
   }
@@ -279,12 +250,6 @@
   }
   async function toggleLang() {
     lang = lang === "jpn" ? "eng" : "jpn";
-    resolvedLang = null;
-    // Sub and dub are two different files upstream, so the player tears the
-    // element down and calls load(), which puts playbackRate back to 1. The
-    // episode did not change, so nothing else clears this - and a stale
-    // localRate makes the drift law skip the nudge it needs to re-apply.
-    localRate = 1;
     try {
       await host.storage.set("lang", lang);
     } catch {
@@ -292,27 +257,14 @@
     }
   }
 
-  /** seek, rate, or undo a nudge - the whole control law, which a native
-   *  video can honour (see watch-drift.ts). */
+  /** The seek lane of the control law only: the embed takes no playback
+   *  rate, so "rate" is as good as none here (see watch-drift.ts). */
   function applyCorrection(correction: Correction | null) {
-    if (!correction || !player) return;
-    if (correction.action === "seek") {
-      // Seeks stay rate-limited: a correction storm is worse than drift.
-      if (Date.now() - lastDriftSeekAt <= 5_000) return;
-      lastDriftSeekAt = Date.now();
-      if (localRate !== 1) {
-        localRate = 1;
-        player.setRate(1);
-      }
-      player.seekLocal(correction.targetPosition);
-    } else if (correction.action === "rate") {
-      if (localRate === correction.rate) return;
-      localRate = correction.rate;
-      player.setRate(correction.rate);
-    } else if (localRate !== 1) {
-      localRate = 1;
-      player.setRate(1);
-    }
+    if (!correction || !player || correction.action !== "seek") return;
+    // Seeks stay rate-limited: a correction storm is worse than drift.
+    if (Date.now() - lastDriftSeekAt <= 5_000) return;
+    lastDriftSeekAt = Date.now();
+    player.seekLocal(correction.targetPosition);
   }
 
   // While this tile exists, it IS the party's renderer: the chat card
@@ -358,8 +310,6 @@
       playing: anime.playing,
       onPlay: () => void togglePlayback(),
       onPause: () => void togglePlayback(),
-      // Chromium floats this element on a tab switch while it plays.
-      pipVideo: player?.element() ?? undefined,
       onNext: () => void skip(),
       onPrevious: () => void previous(),
     });
@@ -425,11 +375,7 @@
     // No next episode: the "latest episode" note is already showing, so the
     // press is a deliberate no-op rather than a stale skip action.
     if (n)
-      await send({
-        action: "step",
-        episode: { id: n.id, number: n.number },
-        at: "end",
-      });
+      await send({ action: "step", episode: { number: n.number }, at: "end" });
   }
 
   async function previous() {
@@ -437,7 +383,7 @@
     if (p)
       await send({
         action: "step",
-        episode: { id: p.id, number: p.number },
+        episode: { number: p.number },
         at: "start",
       });
   }
@@ -455,11 +401,7 @@
     if (anime.currentIndex === null) return;
     const n = nextEpisode();
     if (n) {
-      await send({
-        action: "step",
-        episode: { id: n.id, number: n.number },
-        at: "end",
-      });
+      await send({ action: "step", episode: { number: n.number }, at: "end" });
     } else {
       // The last episode finished: stop the party where it ended instead of
       // trying to keep a finished video "playing". Pause needs a finite
@@ -479,7 +421,7 @@
      click, and its controls are focusable too). -->
 <div
   class="group/tile relative flex h-full w-full flex-col bg-black focus:outline-none"
-  aria-label="Anime party player. Space plays or pauses, left and right seek ten seconds, up and down change your volume."
+  aria-label="Anime party player. Space plays or pauses, left and right seek ten seconds."
   use:tileKeys
 >
   {#if !joined}
@@ -505,25 +447,23 @@
     <div class="anime-tile-player absolute inset-0">
       <AnimePlayer
         bind:this={player}
-        episodeId={current.id}
+        showId={anime.show?.id ?? null}
+        episode={current.number}
         {lang}
         playing={anime.playing}
         position={handoffPosition ?? syncPosition}
-        {volume}
         onPosition={(p) => {
           localPosition = p;
           publishLivePosition(p, anime.playing);
-          // Drift correction, once a second on the reporter's beat: the
-          // watch library's whole control law, since a media element
-          // honours fractional playback rates. Never mid-handoff, never
-          // into a loading element.
+          // Drift correction, once a second on the reporter's beat. Never
+          // mid-handoff, never into a loading player.
           if (!playerLoading && handoffPosition === null) {
             applyCorrection(
               driftCorrection(
                 stateTick(anime),
                 clockEstimateFor(anime.tickBy),
                 anime.tickBy === selfDid,
-                { position: p, paused: !anime.playing, rate: localRate },
+                { position: p, paused: !anime.playing },
                 Date.now()
               )
             );
@@ -545,13 +485,12 @@
         onReady={() => (playerLoading = false)}
         onPlayable={() => (playerLoading = false)}
         onError={() => (playerLoading = false)}
-        onResolvedLang={(value) => (resolvedLang = value)}
         onEnded={ended}
       />
     </div>
-    <!-- No shield needed: the host renders this tile in a pointer-events-
-         none layer, and the element carries no native controls of its own -
-         only elements that re-enable pointer events act. -->
+    <!-- The host renders this tile in a pointer-events-none layer, so the
+         embed's own controls are out of reach here anyway; only elements
+         that re-enable pointer events act. -->
 
     <!-- The shared synced chrome: center play/pause, transport bar,
          vignette. pointer-events discipline lives inside the component -
@@ -561,7 +500,6 @@
       playing={anime.playing}
       position={localPosition}
       {duration}
-      {volume}
       {lang}
       visible={chromeVisible}
       queueLabel={anime.currentIndex !== null
@@ -572,16 +510,8 @@
       onSkip={() => void skip()}
       onSeek={(p) => void seekTo(p)}
       onSeekBy={(d) => void seekBy(d)}
-      onVolume={setVolume}
       onToggleLang={() => void toggleLang()}
     />
-    {#if langNote}
-      <p
-        class="pointer-events-none absolute left-3 top-3 z-30 rounded bg-black/70 px-2 py-1 font-mono text-[10px] text-white/80"
-      >
-        {langNote}
-      </p>
-    {/if}
     {#if atLatest}
       <p
         class="pointer-events-none absolute inset-x-0 top-3 z-30 mx-auto w-fit max-w-[90%] rounded bg-black/70 px-2 py-1 text-center font-mono text-[10px] text-white/80"
@@ -603,12 +533,12 @@
     border: none;
     border-radius: 0;
   }
-  .anime-tile-player :global(video) {
+  .anime-tile-player :global(iframe) {
     width: 100%;
     height: 100%;
     min-height: 0;
+    aspect-ratio: auto;
     border: none;
     border-radius: 0;
-    object-fit: contain;
   }
 </style>
