@@ -1,50 +1,17 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { render } from "svelte/server";
 import ResumeOverlay from "./ResumeOverlay.svelte";
 import {
-  createAutoplayResumeController,
+  createPlayAsserter,
   nextReport,
+  PROJECTION_CAP_S,
   projectedReport,
   readPlayerEvent,
   statedReport,
+  stuckRetryDelay,
 } from "./AnimePlayer.svelte";
 
 const ORIGIN = "https://zokoanime.video";
-
-function setup(playing = true) {
-  vi.useFakeTimers();
-  let active = playing;
-  let needsClick = false;
-  const calls: string[] = [];
-  const embed = {
-    moving: false,
-    isPlaying() {
-      return this.moving;
-    },
-    play() {
-      calls.push("play");
-    },
-  };
-  const controller = createAutoplayResumeController({
-    isPlaying: () => active,
-    setNeedsClick: (value) => (needsClick = value),
-    setTimer: (callback, delay) =>
-      setTimeout(callback, delay) as unknown as number,
-    clearTimer: (timer) =>
-      clearTimeout(timer as unknown as ReturnType<typeof setTimeout>),
-  });
-  return {
-    calls,
-    controller,
-    embed,
-    needsClick: () => needsClick,
-    setPlaying: (value: boolean) => (active = value),
-  };
-}
-
-afterEach(() => {
-  vi.useRealTimers();
-});
 
 describe("embed messages", () => {
   it("reads the embed's own events", () => {
@@ -104,6 +71,12 @@ describe("projectedReport", () => {
     expect(projectedReport({ position: 10, at: 1_000, paused: true }, 9_000, 0)).toBe(10);
   });
 
+  it("stops a few seconds past the last report: no reports means stalled", () => {
+    expect(projectedReport({ position: 10, at: 0, paused: false }, 60_000, 0)).toBe(
+      10 + PROJECTION_CAP_S
+    );
+  });
+
   it("never projects past the end of the episode", () => {
     expect(projectedReport({ position: 1438, at: 0, paused: false }, 10_000, 1440)).toBe(1440);
   });
@@ -151,7 +124,26 @@ describe("nextReport", () => {
   });
 });
 
-describe("autoplay resume", () => {
+describe("stuckRetryDelay", () => {
+  it("waits longer before each reload of a media-less embed, then gives up", () => {
+    expect(stuckRetryDelay(0)).toBe(20_000);
+    expect(stuckRetryDelay(1)).toBe(30_000);
+    expect(stuckRetryDelay(2)).toBe(45_000);
+    expect(stuckRetryDelay(3)).toBeNull();
+  });
+});
+
+describe("play asserter", () => {
+  function setup() {
+    const sent: string[] = [];
+    let needsClick = false;
+    const asserter = createPlayAsserter({
+      send: (type) => sent.push(type),
+      setNeedsClick: (value) => (needsClick = value),
+    });
+    return { asserter, sent, needsClick: () => needsClick };
+  }
+
   it("renders a clickable Play overlay over the picture", () => {
     const { body } = render(ResumeOverlay, { props: { onclick: () => {} } });
     expect(body).toContain("<button");
@@ -160,46 +152,51 @@ describe("autoplay resume", () => {
     expect(body).toContain("lucide-play");
   });
 
-  it("stays out of the way when the embed starts moving", () => {
-    const subject = setup();
-    subject.controller.schedule(subject.embed);
-    subject.embed.moving = true;
-    subject.controller.onPlaying();
-    vi.advanceTimersByTime(2_000);
-    expect(subject.needsClick()).toBe(false);
+  it("keeps asking until the embed moves: a single early play can be swallowed", () => {
+    const { asserter, sent, needsClick } = setup();
+    asserter.assert(false);
+    asserter.assert(false);
+    expect(sent.filter((t) => t === "play")).toHaveLength(2);
+    asserter.moved();
+    asserter.assert(true);
+    expect(sent.filter((t) => t === "play")).toHaveLength(2);
+    expect(needsClick()).toBe(false);
   });
 
-  it("asks for a click when a requested play never moves", () => {
-    const subject = setup();
-    // The silent decline no event reports. Only the watchdog notices.
-    subject.controller.schedule(subject.embed);
-    vi.advanceTimersByTime(1_999);
-    expect(subject.needsClick()).toBe(false);
-    vi.advanceTimersByTime(1);
-    expect(subject.needsClick()).toBe(true);
+  it("does not put up the overlay for an episode that is merely slow to start", () => {
+    const { asserter, needsClick } = setup();
+    for (let i = 0; i < 15; i++) asserter.assert(false);
+    expect(needsClick()).toBe(false);
   });
 
-  it("uses the click to ask the embed to play, and re-arms the watchdog", () => {
-    const subject = setup();
-    subject.controller.resume(subject.embed);
-    expect(subject.calls).toEqual(["play"]);
-    expect(subject.needsClick()).toBe(false);
-    vi.advanceTimersByTime(2_000);
-    expect(subject.needsClick()).toBe(true);
+  it("asks for a click after the browser refuses twice, and stops asking", () => {
+    const { asserter, sent, needsClick } = setup();
+    asserter.assert(false);
+    asserter.paused(false);
+    expect(needsClick()).toBe(false);
+    asserter.paused(false);
+    expect(needsClick()).toBe(true);
+    const before = sent.length;
+    asserter.assert(false);
+    expect(sent).toHaveLength(before);
   });
 
-  it("cancels the fallback when paused or disposed", () => {
-    const subject = setup();
-    subject.controller.schedule(subject.embed);
-    subject.setPlaying(false);
-    subject.controller.pause();
-    vi.advanceTimersByTime(2_000);
-    expect(subject.needsClick()).toBe(false);
+  it("forgives a pause that comes after real playback", () => {
+    const { asserter, needsClick } = setup();
+    asserter.paused(false);
+    asserter.moved();
+    asserter.paused(true);
+    expect(needsClick()).toBe(false);
+  });
 
-    subject.setPlaying(true);
-    subject.controller.schedule(subject.embed);
-    subject.controller.dispose();
-    vi.advanceTimersByTime(2_000);
-    expect(subject.needsClick()).toBe(false);
+  it("uses the click to ask the embed to play", () => {
+    const { asserter, sent, needsClick } = setup();
+    asserter.paused(false);
+    asserter.paused(false);
+    asserter.clicked();
+    expect(needsClick()).toBe(false);
+    expect(sent.at(-1)).toBe("play");
+    asserter.assert(false);
+    expect(sent.at(-2)).toBe("play");
   });
 });

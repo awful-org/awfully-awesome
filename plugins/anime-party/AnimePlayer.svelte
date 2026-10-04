@@ -49,12 +49,21 @@
    * than handed out stale - the drift law would otherwise see a few hundred
    * milliseconds of drift that is not there.
    */
+  /** How far past the embed's last report the estimate may run. Reports
+   *  come several times a second while it really plays. */
+  export const PROJECTION_CAP_S = 3;
+
   export function projectedReport(
     report: { position: number; at: number; paused: boolean },
     now: number,
     duration: number
   ): number {
-    const elapsed = report.paused ? 0 : Math.max(0, now - report.at) / 1_000;
+    // Capped: with no report for a while the embed is stalled or stuck, not
+    // playing, and running the estimate on would show progress that is not
+    // happening (and hide the drift from the correction loop).
+    const elapsed = report.paused
+      ? 0
+      : Math.min(Math.max(0, now - report.at) / 1_000, PROJECTION_CAP_S);
     const at = report.position + elapsed;
     return duration > 0 ? Math.min(at, duration) : at;
   }
@@ -104,69 +113,72 @@
     return { position, at: now, paused, lastTime: null };
   }
 
-  interface AutoplayResumeOptions {
-    isPlaying: () => boolean;
-    setNeedsClick: (value: boolean) => void;
-    setTimer: (callback: () => void, delay: number) => number;
-    clearTimer: (timer: number) => void;
-  }
-
-  /** The slice of the embed the autoplay controller touches. */
-  export interface AutoplayResumePlayer {
-    isPlaying(): boolean;
-    play(): void;
+  /**
+   * How long to wait for an episode's media before reloading the embed, by
+   * how many reloads have already been tried; null once they are used up.
+   *
+   * The embed's video host can be slow enough on an episode nobody has
+   * played lately that its player times out on the playlist and goes idle
+   * for good: "ready", no media, every later "play" ignored. A fresh embed
+   * usually starts, because the first attempt warmed the host's cache.
+   */
+  export function stuckRetryDelay(reloads: number): number | null {
+    return [20_000, 30_000, 45_000][reloads] ?? null;
   }
 
   /**
-   * The autoplay policy, handled the way waffle-party handles it, against
-   * the embed instead of the YouTube iframe.
+   * Keeps asking the embed to play until it does.
    *
-   * The embed already does the first half itself: refused an unmuted play,
-   * it plays muted and says so in its state. What it cannot do is play at
-   * all when even that is refused, and no event fires for "the policy
-   * quietly declined" - so a moment after asking for playback, either the
-   * embed has reported it is moving or a click target goes up on the
-   * picture. That click is a gesture on THIS page, which the iframe's
-   * allow="autoplay" lets the embed use for its next play.
+   * One "play" is not enough. Sent the moment the embed says "ready", it can
+   * land before the embed's own player can act on it, and the embed then
+   * swallows it: the video never loads, the party says playing, and nothing
+   * ever asks again. Seen in a real two-member party - one member's embed
+   * got a single early "play" and sat at its first frame for good. So while
+   * the party is playing and the embed is not moving, ask again on every
+   * tick.
+   *
+   * What it does not do is put up the "Resume playback" overlay just because
+   * an episode is slow to start (a cold one can take half a minute). The
+   * overlay is for the browser refusing playback, which the embed answers
+   * with a "pause" straight after the "play"; two of those in a row with no
+   * movement in between, and only a click on this page can help. Until that
+   * click, it stops asking, so a refusal cannot become a loop.
    */
-  export function createAutoplayResumeController(
-    options: AutoplayResumeOptions
-  ) {
-    let timer: number | null = null;
-
-    function clear() {
-      if (timer !== null) options.clearTimer(timer);
-      timer = null;
+  export function createPlayAsserter(options: {
+    send: (type: "play" | "state") => void;
+    setNeedsClick: (value: boolean) => void;
+  }) {
+    let refusals = 0;
+    let waitingForClick = false;
+    function reset() {
+      refusals = 0;
+      waitingForClick = false;
+      options.setNeedsClick(false);
     }
-
-    function schedule(player: AutoplayResumePlayer) {
-      clear();
-      timer = options.setTimer(() => {
-        timer = null;
-        if (options.isPlaying() && !player.isPlaying())
-          options.setNeedsClick(true);
-      }, 2_000);
-    }
-
     return {
-      schedule,
-      onPlaying() {
-        clear();
-        options.setNeedsClick(false);
+      /** The party is playing; called on every sync and every tick. */
+      assert(moving: boolean) {
+        if (moving || waitingForClick) return;
+        options.send("play");
+        options.send("state");
       },
-      resume(player: AutoplayResumePlayer) {
-        options.setNeedsClick(false);
-        player.play();
-        schedule(player);
+      /** The embed moved, or started playing: nothing left to ask for. */
+      moved: reset,
+      /** The embed paused while the party is playing. */
+      paused(moving: boolean) {
+        if (moving) refusals = 0;
+        refusals += 1;
+        if (refusals >= 2) {
+          waitingForClick = true;
+          options.setNeedsClick(true);
+        }
       },
-      pause() {
-        clear();
-        options.setNeedsClick(false);
+      /** The viewer clicked the overlay: a gesture the next play can use. */
+      clicked() {
+        reset();
+        options.send("play");
       },
-      dispose() {
-        clear();
-        options.setNeedsClick(false);
-      },
+      reset,
     };
   }
 </script>
@@ -221,7 +233,9 @@
    *  says "ready" long before that, and a cold episode can take half a
    *  minute more, so this - not "ready" - is what onReady reports. */
   let mediaReady = false;
-  let last = "";
+  /** The position prop the last seek was judged against, or null for "not
+   *  yet on this source". */
+  let lastPosition: number | null = null;
   let disposed = false;
   let duration = 0;
   /** The embed's last word on where it is, and when that was true here. */
@@ -239,17 +253,17 @@
   /** Show and episode of loadedSrc, whatever its language. */
   let loadedEpisode = "";
   let readyTimer: number | null = null;
+  /** Bumped to replace the iframe with a fresh one on the same source. */
+  let reloadKey = $state(0);
+  let reloads = 0;
+  let readyAt = 0;
+  /** A passing note on the picture (a retry under way), not an error. */
+  let notice = $state("");
 
-  const autoplayResume = createAutoplayResumeController({
-    isPlaying: () => playing,
+  const asserter = createPlayAsserter({
+    send: (type) => command({ type }),
     setNeedsClick: (value) => (needsResumeClick = value),
-    setTimer: (callback, delay) => window.setTimeout(callback, delay),
-    clearTimer: (timer) => window.clearTimeout(timer),
   });
-  const embed: AutoplayResumePlayer = {
-    isPlaying: () => !!report && !report.paused,
-    play: () => command({ type: "play" }),
-  };
 
   function command(message: Record<string, unknown>): void {
     if (!ready) return;
@@ -279,6 +293,16 @@
     return report ? projectedReport(report, Date.now(), duration) : position;
   }
 
+  /**
+   * The embed is actually playing right now: it said so, and its last report
+   * is fresh. A drift correction must not seek an embed that is not - a seek
+   * into a stuck or stalled player shows one new frame and nothing else,
+   * which looked like playback skipping every few seconds.
+   */
+  export function moving(): boolean {
+    return !!report && !report.paused && Date.now() - report.at < 2_500;
+  }
+
   function fail(message: string): void {
     if (disposed) return;
     error = message;
@@ -292,21 +316,20 @@
 
   function sync(): void {
     if (!ready) return;
-    const next = `${src}:${playing}:${position}`;
-    if (next !== last) {
-      last = next;
-      // Only a real disagreement moves the playhead: a seek to where the
-      // embed already is still stalls the picture while it rebuffers.
+    // Only a NEW position moves the playhead, never a play/pause flip on its
+    // own: the paused state can arrive a moment before the position that
+    // goes with it, and seeking to the old one sent a pausing member back to
+    // wherever the party's last tick had been - often the episode's start.
+    // And only a real disagreement: a seek to where the embed already is
+    // still stalls the picture while it rebuffers.
+    if (position !== lastPosition) {
+      lastPosition = position;
       if (Math.abs(currentTime() - position) > 0.5) seekLocal(position);
     }
     // Playback state is asserted every time, changed tuple or not: a freshly
     // loaded embed starts paused even when the party never stopped.
-    if (playing) {
-      command({ type: "play" });
-      autoplayResume.schedule(embed);
-    } else {
-      command({ type: "pause" });
-    }
+    if (playing) asserter.assert(moving());
+    else command({ type: "pause" });
   }
 
   let lastHoldAt = 0;
@@ -329,6 +352,7 @@
     onDuration?.(value);
     if (!mediaReady) {
       mediaReady = true;
+      notice = "";
       onReady?.();
     }
   }
@@ -345,6 +369,7 @@
       case "ready": {
         clearReadyTimer();
         ready = true;
+        readyAt = Date.now();
         error = "";
         report = statedReport(message.position ?? 0, message.paused ?? true, Date.now());
         console.info("[anime-party] player ready", { src, position, playing });
@@ -353,7 +378,7 @@
           // last shared tick put it.
           const elapsed = playing ? (Date.now() - carry.at) / 1_000 : 0;
           seekLocal(carry.position + elapsed);
-          last = `${src}:${playing}:${position}`;
+          lastPosition = position;
         }
         carry = null;
         sync();
@@ -363,30 +388,28 @@
       case "seeked":
         if (message.position !== undefined)
           report = nextReport(report, message.type, message.position, Date.now());
-        if (message.type === "time" && report && !report.paused) onPlayable?.();
+        if (message.type === "time" && report && !report.paused) {
+          onPlayable?.();
+          asserter.moved();
+        }
         holdPaused();
         break;
       case "play":
         report = statedReport(currentTime(), false, Date.now());
         onPlayable?.();
-        autoplayResume.onPlaying();
+        asserter.moved();
         // Started under a paused party: the click that gave the sound back
         // also toggled the embed's own playback. The party wins.
         if (!playing) command({ type: "pause" });
         else command({ type: "state" });
         break;
       case "pause":
+        // The embed paused on its own: a stall, a click inside it, an unmute,
+        // or the browser refusing the play. The party state is
+        // authoritative: the asserter asks again on its next tick, or puts
+        // up the overlay once it is clear only a click will do.
+        if (playing) asserter.paused(moving());
         report = statedReport(currentTime(), true, Date.now());
-        // The embed paused on its own: a stall, a click inside it, an unmute.
-        // The party state is authoritative, so ask once for playback back and
-        // let the watchdog raise the overlay if the answer is no. One attempt
-        // per pause event, so a refusal cannot loop.
-        if (playing) {
-          window.setTimeout(() => {
-            if (!disposed && playing) command({ type: "play" });
-          }, 0);
-          autoplayResume.schedule(embed);
-        }
         break;
       case "state":
         if (message.position !== undefined && message.paused !== undefined)
@@ -414,14 +437,54 @@
     loadedEpisode = episodeKey;
     ready = false;
     mediaReady = false;
-    last = "";
+    lastPosition = null;
     report = null;
     duration = 0;
     error = "";
     needsSound = false;
-    autoplayResume.pause();
+    reloads = 0;
+    notice = "";
+    asserter.reset();
     clearReadyTimer();
     if (!next) return;
+    armReadyTimer();
+  }
+
+  /** Replace the embed with a fresh one on the same source: see
+   *  stuckRetryDelay. The new page is synced from scratch when it says
+   *  "ready", like the first one. */
+  function reloadEmbed(): void {
+    reloads += 1;
+    notice = `The video host is slow to start this episode. Trying again (${reloads}/3)…`;
+    console.info("[anime-party] embed had no media, reloading", { src, reloads });
+    ready = false;
+    mediaReady = false;
+    lastPosition = null;
+    report = null;
+    duration = 0;
+    asserter.reset();
+    clearReadyTimer();
+    armReadyTimer();
+    reloadKey += 1;
+  }
+
+  /** The party is playing: has the embed been sitting without media for
+   *  longer than the current retry allows? */
+  function checkStuck(): void {
+    if (!ready || mediaReady || disposed || error) return;
+    const waited = Date.now() - readyAt;
+    const wait = stuckRetryDelay(reloads);
+    if (wait !== null) {
+      if (waited > wait) reloadEmbed();
+    } else if (waited > 45_000) {
+      notice = "";
+      fail(
+        "zokoanime's video host did not start this episode. Try again in a minute, or pick another episode."
+      );
+    }
+  }
+
+  function armReadyTimer(): void {
     // A missing episode is a page that never says "ready": the embed serves
     // its own "Not found" card with a 200, and nothing crosses the frame
     // boundary to say so.
@@ -448,9 +511,20 @@
     position;
     sync();
     if (!playing) {
-      autoplayResume.pause();
+      asserter.reset();
       needsSound = false;
     }
+  });
+
+  // The asserter's tick: while the party plays and the embed has not
+  // started (or has stopped) moving, ask again every two seconds.
+  $effect(() => {
+    if (!playing) return;
+    const tick = window.setInterval(() => {
+      if (ready && !disposed) asserter.assert(moving());
+      checkStuck();
+    }, 2_000);
+    return () => window.clearInterval(tick);
   });
 
   // While the sound is off, ask the embed for its state each second: no
@@ -463,7 +537,7 @@
   });
 
   function resumePlayback(): void {
-    autoplayResume.resume(embed);
+    asserter.clicked();
   }
 
   onMount(() => {
@@ -485,7 +559,7 @@
       });
       disposed = true;
       clearReadyTimer();
-      autoplayResume.dispose();
+      asserter.reset();
       window.removeEventListener("message", onMessage);
       window.clearInterval(reporter);
     };
@@ -500,7 +574,7 @@
          new one's. Never sandboxed: the embed refuses to run in a sandboxed
          frame. allow="autoplay" is what lets an episode change start with
          sound after the page has had a click. -->
-    {#key src}
+    {#key `${src}#${reloadKey}`}
       <iframe
         bind:this={frame}
         {src}
@@ -522,6 +596,14 @@
       role="status"
     >
       Your browser started this muted. Click the video to turn the sound on.
+    </p>
+  {/if}
+  {#if notice && !error}
+    <p
+      class="pointer-events-none absolute bottom-3 left-1/2 z-30 w-fit max-w-[90%] -translate-x-1/2 rounded bg-black/80 px-2 py-1 text-center font-mono text-[11px] text-white"
+      role="status"
+    >
+      {notice}
     </p>
   {/if}
   {#if needsResumeClick}

@@ -258,9 +258,13 @@
   }
 
   /** The seek lane of the control law only: the embed takes no playback
-   *  rate, so "rate" is as good as none here (see watch-drift.ts). */
+   *  rate, so "rate" is as good as none here (see watch-drift.ts). Never
+   *  into an embed that is not moving: a seek into a stuck or stalling one
+   *  shows a single new frame, and every five seconds that read as the
+   *  episode skipping instead of playing. */
   function applyCorrection(correction: Correction | null) {
     if (!correction || !player || correction.action !== "seek") return;
+    if (!player.moving()) return;
     // Seeks stay rate-limited: a correction storm is worse than drift.
     if (Date.now() - lastDriftSeekAt <= 5_000) return;
     lastDriftSeekAt = Date.now();
@@ -468,11 +472,19 @@
               )
             );
           }
+          // Released once the player is in step, or simply once it is
+          // moving: a slow-starting embed begins late and may never come
+          // within the window, and holding the handoff pinned the player's
+          // position and kept drift correction off for good. From the live
+          // position on, the drift law does the aligning.
           if (
             handoffPosition !== null &&
-            handoffIsReadyToRelease(playerLoading, p, handoffPosition, duration)
-          )
+            (handoffIsReadyToRelease(playerLoading, p, handoffPosition, duration) ||
+              (!playerLoading && player?.moving()))
+          ) {
+            syncPosition = p;
             handoffPosition = null;
+          }
         }}
         onDuration={(d) => {
           // The player reports 0 for "no metadata yet", the same way the

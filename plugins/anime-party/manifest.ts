@@ -7,7 +7,7 @@ export const manifest: PluginManifest = {
   icon: "lucide:tv",
   author: "awful-org",
   license: "MIT",
-  version: "0.2.1",
+  version: "0.2.2",
   repository: "https://github.com/awful-org/awfully-awesome",
   apiVersion: 1,
   commands: [
