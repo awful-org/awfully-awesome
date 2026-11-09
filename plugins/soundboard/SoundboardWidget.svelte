@@ -16,6 +16,24 @@
   let activeSlot = $state<number | null>(null);
   let activeTimer: ReturnType<typeof setTimeout> | null = null;
   let unsubscribe = () => {};
+  let strip = $state<HTMLDivElement>();
+  let moreBefore = $state(false);
+  let moreAfter = $state(false);
+
+  function updateOverflow() {
+    if (!strip) return;
+    moreBefore = strip.scrollLeft > 1;
+    moreAfter = strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 1;
+  }
+
+  $effect(() => {
+    if (!strip) return;
+    void sounds.length;
+    updateOverflow();
+    const observer = new ResizeObserver(updateOverflow);
+    observer.observe(strip);
+    return () => observer.disconnect();
+  });
 
   const blocked = $derived(host.callAudio.blockedReason());
 
@@ -66,7 +84,14 @@
     /soundboard to add sounds
   </span>
 {:else}
-  <div class="flex items-center gap-0.5" aria-label="Soundboard">
+  <div
+    bind:this={strip}
+    class="sound-strip flex min-w-0 items-center gap-0.5 overflow-x-auto overflow-y-hidden"
+    class:more-before={moreBefore}
+    class:more-after={moreAfter}
+    aria-label="Soundboard"
+    onscroll={updateOverflow}
+  >
     {#each sounds as sound (sound.slot)}
       <!-- The app's Tip, not the browser tooltip - same chrome as every
            other control, and it still shows on a disabled button. -->
@@ -95,3 +120,27 @@
     {/each}
   </div>
 {/if}
+
+<style>
+  .sound-strip {
+    scrollbar-width: thin;
+    scrollbar-color: var(--muted-foreground) transparent;
+    --fade-left: 0px;
+    --fade-right: 0px;
+    mask-image: linear-gradient(to right, transparent, black var(--fade-left), black calc(100% - var(--fade-right)), transparent);
+  }
+  .more-before { --fade-left: 8px; }
+  .more-after { --fade-right: 8px; }
+  @supports selector(::-webkit-scrollbar) {
+    .sound-strip {
+      scrollbar-width: auto;
+      scrollbar-color: auto;
+    }
+  }
+  .sound-strip::-webkit-scrollbar { height: 3px; }
+  .sound-strip::-webkit-scrollbar-thumb {
+    background: var(--muted-foreground);
+    border: 0;
+    border-radius: 999px;
+  }
+</style>
